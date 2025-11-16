@@ -1,18 +1,22 @@
 package http
 
 import (
-	"fmt"
 	"net/http"
 )
 
+func (a *API) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
 
-func handleHealthz() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// ctx := r.Context()
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("Ok"))
-		if err != nil {
-			fmt.Printf("error: %v\n", err.Error())
-		}
-	})
+func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := a.DB.Ping(ctx); err != nil {
+		a.Logger.Error("db ping failed", "err", err)
+		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ready"))
 }

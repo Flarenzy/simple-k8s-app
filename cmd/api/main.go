@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/Flarenzy/simple-k8s-app/internal/api"
+	"github.com/Flarenzy/simple-k8s-app/internal/app"
 )
 
 func main() {

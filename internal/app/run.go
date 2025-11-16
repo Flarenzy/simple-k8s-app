@@ -3,14 +3,17 @@ package api
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
-	internalHTTP "github.com/Flarenzy/simple-k8s-app/internal/http"
+	appdb "github.com/Flarenzy/simple-k8s-app/internal/db"
+	sqlcdb "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	apihttp "github.com/Flarenzy/simple-k8s-app/internal/http"
 )
 
 type Config struct {
-	Port int
+	Port         int
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
@@ -24,11 +27,23 @@ func LoadConfig() Config {
 }
 
 func Run(ctx context.Context, cfg Config) error {
-	mux := internalHTTP.NewServer(nil, nil, nil)
+
+	logger := slog.Default()
+	dsn := ""
+
+	pool, err := appdb.NewPool(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	queries := sqlcdb.New(pool)
+
+	api := apihttp.NewAPI(logger, pool, queries)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      mux,
+		Handler:      api.Router(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 	}
