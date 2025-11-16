@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	appdb "github.com/Flarenzy/simple-k8s-app/internal/db"
@@ -13,25 +15,37 @@ import (
 )
 
 type Config struct {
-	Port         int
+	Port         string
+	DSN          string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
 
 func LoadConfig() Config {
-	return Config{
-		Port:         4040,
+	cfg := Config{
+		DSN:          os.Getenv("DB_CONN"),
+		Port:         os.Getenv("PORT"),
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
 	}
+
+	if cfg.DSN == "" {
+		log.Fatal("missing required environment variable: DB_CONN")
+	}
+	if cfg.Port == "" {
+		cfg.Port = "4040"
+	}
+	return cfg
 }
 
 func Run(ctx context.Context, cfg Config) error {
 
 	logger := slog.Default()
-	dsn := ""
-
-	pool, err := appdb.NewPool(ctx, dsn)
+	dsn := os.Getenv("DB_CONN")
+	if dsn == "" {
+		dsn = "postgres://ipam:ipam@host:5432/ipam?sslmode=disable"
+	}
+	pool, err := appdb.NewPool(ctx, cfg.DSN)
 	if err != nil {
 		return err
 	}
@@ -42,7 +56,7 @@ func Run(ctx context.Context, cfg Config) error {
 	api := apihttp.NewAPI(logger, pool, queries)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Addr:         fmt.Sprintf(":%s", cfg.Port),
 		Handler:      api.Router(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
