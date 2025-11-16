@@ -63,7 +63,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	go func() {
-		fmt.Printf("Serving server on port %d\n", cfg.Port)
+		fmt.Printf("Serving server on port %s\n", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("ListenAndServe error: %s\n", err)
 		}

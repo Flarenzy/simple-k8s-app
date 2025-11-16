@@ -1,0 +1,21 @@
+---
+services:
+  db:
+    image: postgres:16
+    container_name: "ipam-db"
+    environment: 
+      POSTGRES_DB: ipam
+      POSTGRES_USER: ipam
+      POSTGRES_PASSWORD: ipam
+    ports:
+      - 5432:5432
+    volumes:
+      - ipam-db-data:/var/ib/postgres/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ipam -d ipam"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  ipam-db-data:
