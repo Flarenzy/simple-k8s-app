@@ -34,6 +34,25 @@ func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Sub
 	return i, err
 }
 
+const getSubnetByID = `-- name: GetSubnetByID :one
+SELECT id, cidr, description, created_at, updated_at
+FROM subnets
+WHERE id = $1
+`
+
+func (q *Queries) GetSubnetByID(ctx context.Context, id int64) (Subnet, error) {
+	row := q.db.QueryRow(ctx, getSubnetByID, id)
+	var i Subnet
+	err := row.Scan(
+		&i.ID,
+		&i.Cidr,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listSubnets = `-- name: ListSubnets :many
 SELECT id, cidr, description, created_at, updated_at
 FROM subnets

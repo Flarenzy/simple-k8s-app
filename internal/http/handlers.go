@@ -2,8 +2,9 @@ package http
 
 import (
 	"net/http"
-	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"strconv"
 
+	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 )
 
 func (a *API) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -27,17 +28,17 @@ func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context();
 	subnets, err := a.Queries.ListSubnets(ctx);
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "error reading subnets from db", "err", err.Error())
+		a.Logger.ErrorContext(ctx, "reading subnets from db", "err", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err = w.Write([]byte("internal server error"))
 		if err != nil {
-			a.Logger.ErrorContext(ctx, "error writting error response to client", "err", err.Error())
+			a.Logger.ErrorContext(ctx, "writting error response to client", "err", err.Error())
 		}
 		return
 	}
 	err = encode(w, r, http.StatusOK, subnets);
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "error responding to client with subnet list", "err", err.Error())
+		a.Logger.ErrorContext(ctx, "responding to client with subnet list", "err", err.Error())
 	}
 }
 
@@ -46,25 +47,54 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 	subnet, err := decode[sqlc.CreateSubnetParams](r);
 	defer r.Body.Close()
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "error unmarshaling subnet from request", "err", err.Error())
+		a.Logger.ErrorContext(ctx, "unmarshaling subnet from request", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, "bad request")
 		if err != nil {
-			a.Logger.ErrorContext(ctx, "error responding to client", "err", err.Error())
+			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 		}
 		return
 	}
 
 	respSubnet, err := a.Queries.CreateSubnet(ctx, subnet)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "error inserting subnet into db", "err", err.Error(), "subnet", subnet.Cidr)
+		a.Logger.ErrorContext(ctx, "inserting subnet into db", "err", err.Error(), "subnet", subnet.Cidr)
 		err = encode(w, r, http.StatusInternalServerError, "internal server error while saving subnet to db")
 		if err != nil {
-			a.Logger.ErrorContext(ctx, "error responding to client", "err", err.Error())
+			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 		}
 		return
 	}
 	err = encode(w, r, http.StatusCreated, respSubnet)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "error responding to client", "err", err.Error())
+		a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
+	}
+}
+
+func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context();
+	strID := r.PathValue("id");
+	id, err := strconv.ParseInt(strID, 10, 64)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "converting string id to int64", "strID", strID, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, "bad request")
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
+		}
+		return
+	}
+
+	subnet, err := a.Queries.GetSubnetByID(ctx, id);
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "subnet with following id not found", "id", id, "err", err.Error())
+		err = encode(w, r, http.StatusNotFound, "subnet not found")
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
+		}
+		return
+	}
+
+	err = encode(w, r, http.StatusOK, subnet)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 	}
 }
