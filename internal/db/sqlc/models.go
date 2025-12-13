@@ -5,12 +5,24 @@
 package db
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IpAddress struct {
+	ID        pgtype.UUID        `json:"id"`
+	Ip        netip.Addr         `json:"ip"`
+	Hostname  string             `json:"hostname"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	SubnetID  int64              `json:"subnet_id"`
+}
+
 type Subnet struct {
 	ID          int64              `json:"id"`
-	Cidr        string             `json:"cidr"`
+	Cidr        netip.Prefix       `json:"cidr"`
 	Description string             `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }

@@ -7,17 +7,18 @@ package db
 
 import (
 	"context"
+	"net/netip"
 )
 
 const createSubnet = `-- name: CreateSubnet :one
 INSERT INTO subnets (cidr, description)
 VALUES ($1, $2)
-RETURNING id, cidr, description, created_at
+RETURNING id, cidr, description, created_at, updated_at
 `
 
 type CreateSubnetParams struct {
-	Cidr        string `json:"cidr"`
-	Description string `json:"description"`
+	Cidr        netip.Prefix `json:"cidr"`
+	Description string       `json:"description"`
 }
 
 func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Subnet, error) {
@@ -28,12 +29,13 @@ func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Sub
 		&i.Cidr,
 		&i.Description,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listSubnets = `-- name: ListSubnets :many
-SELECT id, cidr, description, created_at
+SELECT id, cidr, description, created_at, updated_at
 FROM subnets
 ORDER BY id
 `
@@ -52,6 +54,7 @@ func (q *Queries) ListSubnets(ctx context.Context) ([]Subnet, error) {
 			&i.Cidr,
 			&i.Description,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

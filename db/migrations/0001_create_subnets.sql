@@ -1,11 +1,12 @@
 -- db/migrations/0001_create_subnets.sql
 
 -- +goose Up
-CREATE TABLE subnets (
-    id          bigserial PRIMARY KEY,
-    cidr        text        NOT NULL,
-    description text        NOT NULL DEFAULT '',
-    created_at  timestamptz NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS subnets (
+    id          BIGSERIAL PRIMARY KEY,
+    cidr        CIDR        NOT NULL,
+    description TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- +goose Down
