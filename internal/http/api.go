@@ -6,6 +6,7 @@ import (
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
 
 type API struct {
@@ -27,6 +28,10 @@ func (a *API) Router() http.Handler {
 
 	mux.HandleFunc("/healthz", a.handleHealthz)
 	mux.HandleFunc("/readyz", a.handleReadyz)
+	mux.Handle("/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
+
 	mux.HandleFunc("GET /api/v1/subnets", a.handleGetAllSubnets)
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)

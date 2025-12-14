@@ -23,6 +23,9 @@ tidy:
 sqlc:
 	sqlc generate
 
+docs:
+	swag init -d cmd/api
+
 ## ------------------------------
 ## Database (docker-compose)
 ## ------------------------------
@@ -67,10 +70,10 @@ db-status:
 	goose -dir db/migrations postgres "$(DB_DSN)" status
 
 ## ------------------------------
-## Tools (sqlc + goose)
+## Tools (sqlc + goose + swag)
 ## ------------------------------
 
-install-tools: install-sqlc install-goose
+install-tools: install-sqlc install-goose install-swagger
 
 install-sqlc:
 	@if ! command -v sqlc >/dev/null 2>&1; then \
@@ -86,4 +89,12 @@ install-goose:
 		go install github.com/pressly/goose/v3/cmd/goose@latest; \
 	else \
 		echo "goose already installed"; \
+	fi
+
+install-swagger:
+	@if ! command -v swag >/dev/null 2>&1; then \
+		echo "Installing swag..."; \
+		go install github.com/swaggo/swag/cmd/swag@latest; \
+	else \
+		echo "swag already installed"; \
 	fi
