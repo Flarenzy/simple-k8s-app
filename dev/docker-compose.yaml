@@ -10,7 +10,10 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - ipam-db-data:/var/ib/postgres/data
+    # For PostgreSQL 17 and below. 
+    # For PostgreSQL 18 and above: The data directory has changed to a version-specific path, 
+    # such as /var/lib/postgresql/18/docker for version 18, and the general volume is /var/lib/postgresql
+      - ipam-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ipam -d ipam"]
       interval: 5s
