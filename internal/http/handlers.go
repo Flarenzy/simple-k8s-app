@@ -46,6 +46,9 @@ func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "reading subnets from db", "err", err.Error())
 		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "couldn't encode response", "err", err)
+		}
 		return
 	}
 	err = encode(w, r, http.StatusOK, subnetsToResponse(subnets))
