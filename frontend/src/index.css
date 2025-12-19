@@ -1,0 +1,154 @@
+:root {
+	font-family: "Inter", system-ui, -apple-system, sans-serif;
+	background: radial-gradient(circle at 10% 20%, #f5f8ff, #ffffff 35%), #f7f9fc;
+	color: #0f172a;
+	line-height: 1.5;
+	font-weight: 400;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+}
+
+button,
+input {
+	font: inherit;
+	color: inherit;
+}
+
+.page {
+	min-height: 100vh;
+	padding: 24px;
+	max-width: 920px;
+	margin: 0 auto;
+}
+
+.page--center {
+	display: grid;
+	place-items: center;
+}
+
+.card {
+	width: min(420px, 100vw - 32px);
+	background: #ffffff;
+	border-radius: 16px;
+	box-shadow:
+		0 18px 40px rgba(15, 23, 42, 0.12),
+		0 6px 18px rgba(15, 23, 42, 0.06);
+	padding: 28px;
+	display: grid;
+	gap: 16px;
+}
+
+.card__header {
+	display: grid;
+	gap: 4px;
+}
+
+.title {
+	font-size: 24px;
+	font-weight: 700;
+	margin: 0;
+}
+
+.eyebrow {
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-size: 12px;
+	color: #475569;
+	margin: 0;
+}
+
+.muted {
+	color: #64748b;
+	margin: 0;
+	font-size: 14px;
+}
+
+.field {
+	display: grid;
+	gap: 6px;
+	font-size: 14px;
+	color: #0f172a;
+}
+
+.field input {
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	padding: 12px 14px;
+	background: #f8fafc;
+	transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.field input:focus {
+	outline: none;
+	border-color: #2563eb;
+	background: #fff;
+	box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.primary,
+.secondary {
+	border: none;
+	border-radius: 12px;
+	padding: 12px 16px;
+	cursor: pointer;
+	font-weight: 700;
+	transition: transform 120ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.primary {
+	background: linear-gradient(135deg, #2563eb, #1d4ed8);
+	color: #fff;
+	box-shadow: 0 12px 30px rgba(37, 99, 235, 0.25);
+}
+
+.primary:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 16px 36px rgba(37, 99, 235, 0.28);
+}
+
+.secondary {
+	background: #fff;
+	border: 1px solid #e2e8f0;
+	color: #0f172a;
+}
+
+.secondary:hover {
+	background: #f8fafc;
+}
+
+.error {
+	color: #b91c1c;
+	background: #fef2f2;
+	border: 1px solid #fecdd3;
+	border-radius: 10px;
+	padding: 10px 12px;
+	font-size: 14px;
+}
+
+.header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 4px 24px;
+}
+
+.panel {
+	background: #ffffff;
+	border-radius: 16px;
+	padding: 24px;
+	border: 1px solid #e2e8f0;
+}
+
+.panel__title {
+	margin: 0 0 6px;
+	font-size: 20px;
+}
