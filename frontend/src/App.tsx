@@ -21,8 +21,31 @@ export default function App() {
 	const [subnets, setSubnets] = useState<Subnet[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [showCreate, setShowCreate] = useState(false);
+	const [newCidr, setNewCidr] = useState("");
+	const [newDesc, setNewDesc] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [saveError, setSaveError] = useState<string | null>(null);
 
 	const isAdmin = useMemo(() => view === "home", [view]);
+
+	const fetchSubnets = async () => {
+		setLoading(true);
+		setLoadError(null);
+		try {
+			const resp = await fetch(`${API_BASE}/subnets`);
+			if (!resp.ok) {
+				throw new Error(`request failed: ${resp.status}`);
+			}
+			const data: Subnet[] = await resp.json();
+			setSubnets(data);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "unknown error";
+			setLoadError(message);
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
@@ -43,31 +66,53 @@ export default function App() {
 		setError(null);
 		setSubnets([]);
 		setLoadError(null);
+		setShowCreate(false);
+		setNewCidr("");
+		setNewDesc("");
+		setSaving(false);
+		setSaveError(null);
 	};
 
 	useEffect(() => {
 		if (view !== "home") return;
 
-		const fetchSubnets = async () => {
-			setLoading(true);
-			setLoadError(null);
-			try {
-				const resp = await fetch(`${API_BASE}/subnets`);
-				if (!resp.ok) {
-					throw new Error(`request failed: ${resp.status}`);
-				}
-				const data: Subnet[] = await resp.json();
-				setSubnets(data);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : "unknown error";
-				setLoadError(message);
-			} finally {
-				setLoading(false);
-			}
-		};
-
 		fetchSubnets();
 	}, [view]);
+
+	const createSubnet = async () => {
+		setSaving(true);
+		setSaveError(null);
+		try {
+			const resp = await fetch(`${API_BASE}/subnets`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ cidr: newCidr.trim(), description: newDesc.trim() }),
+			});
+			if (!resp.ok) {
+				const text = await resp.text();
+				throw new Error(text || `request failed: ${resp.status}`);
+			}
+			const created: Subnet = await resp.json();
+			setSubnets((prev) => [created, ...prev]);
+			setShowCreate(false);
+			setNewCidr("");
+			setNewDesc("");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "unknown error";
+			setSaveError(message);
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleCreateSubmit = (e: FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		if (!newCidr.trim()) {
+			setSaveError("CIDR is required");
+			return;
+		}
+		void createSubnet();
+	};
 
 	if (view === "home") {
 		return (
@@ -83,8 +128,13 @@ export default function App() {
 				</header>
 				<main className="panel">
 					<div className="panel__title-row">
-						<h1 className="panel__title">Subnets</h1>
-						<div className="pill">{subnets.length}</div>
+						<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+							<h1 className="panel__title">Subnets</h1>
+							<div className="pill">{subnets.length}</div>
+						</div>
+						<button className="primary" onClick={() => setShowCreate(true)}>
+							+ Add
+						</button>
 					</div>
 					<p className="muted">Current subnets and usage (ID hidden from UI).</p>
 
@@ -122,6 +172,49 @@ export default function App() {
 						</table>
 					) : null}
 				</main>
+
+				{showCreate ? (
+					<div className="modal">
+						<div className="modal__backdrop" onClick={() => setShowCreate(false)} />
+						<form className="modal__content" onSubmit={handleCreateSubmit}>
+							<div className="card__header">
+								<p className="eyebrow">Create subnet</p>
+								<h2 className="title">New subnet</h2>
+								<p className="muted">Backend validates the CIDR.</p>
+							</div>
+
+							<label className="field">
+								<span>CIDR</span>
+								<input
+									value={newCidr}
+									onChange={(e) => setNewCidr(e.target.value)}
+									placeholder="10.0.0.0/24"
+									required
+								/>
+							</label>
+
+							<label className="field">
+								<span>Description</span>
+								<input
+									value={newDesc}
+									onChange={(e) => setNewDesc(e.target.value)}
+									placeholder="Office network"
+								/>
+							</label>
+
+							{saveError ? <div className="error">Failed: {saveError}</div> : null}
+
+							<div className="modal__actions">
+								<button type="button" className="secondary" onClick={() => setShowCreate(false)} disabled={saving}>
+									Cancel
+								</button>
+								<button type="submit" className="primary" disabled={saving}>
+									{saving ? "Saving..." : "Save"}
+								</button>
+							</div>
+						</form>
+					</div>
+				) : null}
 			</div>
 		);
 	}

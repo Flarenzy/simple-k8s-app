@@ -157,6 +157,7 @@ input {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+	justify-content: space-between;
 }
 
 .pill {
@@ -198,4 +199,38 @@ input {
 .mono {
 	font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 	font-size: 13px;
+}
+
+.modal {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	z-index: 10;
+}
+
+.modal__backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.35);
+	backdrop-filter: blur(2px);
+}
+
+.modal__content {
+	position: relative;
+	background: #fff;
+	border-radius: 16px;
+	padding: 24px;
+	width: min(480px, 90vw);
+	box-shadow:
+		0 18px 40px rgba(15, 23, 42, 0.16),
+		0 6px 18px rgba(15, 23, 42, 0.08);
+	display: grid;
+	gap: 16px;
+}
+
+.modal__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 12px;
 }
