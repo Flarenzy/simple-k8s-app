@@ -1,14 +1,26 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type View = "login" | "home";
 
+type Subnet = {
+	id: number;
+	cidr: string;
+	description: string;
+	created_at: string;
+	updated_at: string;
+};
+
 const ADMIN_USERNAME = "admin";
+const API_BASE = "/api/v1";
 
 export default function App() {
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [view, setView] = useState<View>("login");
 	const [error, setError] = useState<string | null>(null);
+	const [subnets, setSubnets] = useState<Subnet[]>([]);
+	const [loading, setLoading] = useState(false);
+	const [loadError, setLoadError] = useState<string | null>(null);
 
 	const isAdmin = useMemo(() => view === "home", [view]);
 
@@ -29,7 +41,33 @@ export default function App() {
 		setPassword("");
 		setView("login");
 		setError(null);
+		setSubnets([]);
+		setLoadError(null);
 	};
+
+	useEffect(() => {
+		if (view !== "home") return;
+
+		const fetchSubnets = async () => {
+			setLoading(true);
+			setLoadError(null);
+			try {
+				const resp = await fetch(`${API_BASE}/subnets`);
+				if (!resp.ok) {
+					throw new Error(`request failed: ${resp.status}`);
+				}
+				const data: Subnet[] = await resp.json();
+				setSubnets(data);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "unknown error";
+				setLoadError(message);
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		fetchSubnets();
+	}, [view]);
 
 	if (view === "home") {
 		return (
@@ -44,8 +82,45 @@ export default function App() {
 					</button>
 				</header>
 				<main className="panel">
-					<h1 className="panel__title">Welcome, admin</h1>
-					<p className="muted">Frontend wiring goes here.</p>
+					<div className="panel__title-row">
+						<h1 className="panel__title">Subnets</h1>
+						<div className="pill">{subnets.length}</div>
+					</div>
+					<p className="muted">Current subnets and usage (ID hidden from UI).</p>
+
+					{loading ? <div className="muted">Loading...</div> : null}
+					{loadError ? <div className="error">Failed to load: {loadError}</div> : null}
+
+					{!loading && !loadError ? (
+						<table className="table">
+							<thead>
+								<tr>
+									<th>CIDR</th>
+									<th>Description</th>
+									<th>Usage</th>
+									<th>Updated</th>
+								</tr>
+							</thead>
+							<tbody>
+								{subnets.length === 0 ? (
+									<tr>
+										<td colSpan={4} className="muted">
+											No subnets yet.
+										</td>
+									</tr>
+								) : (
+									subnets.map((subnet) => (
+										<tr key={subnet.id}>
+											<td className="mono">{subnet.cidr}</td>
+											<td>{subnet.description || "—"}</td>
+											<td className="muted">N/A</td>
+											<td className="muted">{new Date(subnet.updated_at).toLocaleString()}</td>
+										</tr>
+									))
+								)}
+							</tbody>
+						</table>
+					) : null}
 				</main>
 			</div>
 		);

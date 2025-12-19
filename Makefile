@@ -5,13 +5,18 @@ GO_FILES := $(shell find . -type f -name '*.go')
 DB_DSN := postgres://ipam:ipam@localhost:5432/ipam?sslmode=disable
 COMPOSE := podman compose -f dev/docker-compose.yaml
 
-.PHONY: docs format
+.PHONY: docs format run run-api
 
 ## ------------------------------
 ## App commands
 ## ------------------------------
 
 run:
+	@echo "Starting backend (4040) and frontend (5173)..."
+	@cd frontend && test -d node_modules || npm install
+	@bash -c 'trap "kill 0" EXIT; DB_CONN="$(DB_DSN)" PORT=4040 go run ./cmd/api & npm --prefix frontend run dev -- --host'
+
+run-api:
 	@echo "Running $(APP_NAME)..."
 	DB_CONN="$(DB_DSN)" go run ./cmd/api
 
