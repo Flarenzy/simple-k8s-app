@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	
+
+	"github.com/Flarenzy/simple-k8s-app/docs"
 	"github.com/Flarenzy/simple-k8s-app/internal/app"
-	_ "github.com/Flarenzy/simple-k8s-app/docs"
 )
 
 //	@title			Simple IPAM API
@@ -23,13 +23,18 @@ import (
 //	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
 
 //	@host		localhost:4040
-//	@BasePath	/api/v1
+//	@BasePath	/
 
 //	@securityDefinitions.basic	BasicAuth
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	// Swagger served at /swagger; use same host as the request origin to avoid CORS/host mismatches.
+	docs.SwaggerInfo.Host = ""
+	docs.SwaggerInfo.BasePath = "/"
+	docs.SwaggerInfo.Schemes = []string{"http"}
 
 	cfg := api.LoadConfig()
 

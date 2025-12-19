@@ -1,4 +1,40 @@
-basePath: /api/v1
+basePath: /
+definitions:
+  http.CreateSubnetRequest:
+    properties:
+      cidr:
+        example: 10.0.0.0/24
+        type: string
+      description:
+        example: Office network
+        type: string
+    required:
+    - cidr
+    type: object
+  http.ErrorResponse:
+    properties:
+      error:
+        example: subnet not found
+        type: string
+    type: object
+  http.SubnetResponse:
+    properties:
+      cidr:
+        example: 10.0.0.0/24
+        type: string
+      created_at:
+        example: "2024-05-10T15:04:05Z"
+        type: string
+      description:
+        example: Office network
+        type: string
+      id:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2024-05-10T15:04:05Z"
+        type: string
+    type: object
 host: localhost:4040
 info:
   contact:
@@ -12,7 +48,107 @@ info:
   termsOfService: http://swagger.io/terms/
   title: Simple IPAM API
   version: "1.0"
-paths: {}
+paths:
+  /api/v1/subnets:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.SubnetResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: List subnets
+      tags:
+      - subnets
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Subnet payload
+        in: body
+        name: subnet
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateSubnetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/http.SubnetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Create subnet
+      tags:
+      - subnets
+  /api/v1/subnets/{id}:
+    get:
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SubnetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get subnet by ID
+      tags:
+      - subnets
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - health
+  /readyz:
+    get:
+      responses:
+        "200":
+          description: ready
+          schema:
+            type: string
+        "503":
+          description: db unavailable
+          schema:
+            type: string
+      summary: Readiness check
+      tags:
+      - health
 securityDefinitions:
   BasicAuth:
     type: basic

@@ -5,6 +5,8 @@ GO_FILES := $(shell find . -type f -name '*.go')
 DB_DSN := postgres://ipam:ipam@localhost:5432/ipam?sslmode=disable
 COMPOSE := podman compose -f dev/docker-compose.yaml
 
+.PHONY: docs format
+
 ## ------------------------------
 ## App commands
 ## ------------------------------
@@ -24,7 +26,10 @@ sqlc:
 	sqlc generate
 
 docs:
-	swag init -d cmd/api
+	swag init -g main.go -d cmd/api,internal/http
+
+format:
+	gofmt -w $(GO_FILES)
 
 ## ------------------------------
 ## Database (docker-compose)
