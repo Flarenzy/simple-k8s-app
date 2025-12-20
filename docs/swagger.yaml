@@ -156,6 +156,37 @@ paths:
       tags:
       - subnets
   /api/v1/subnets/{id}/ips:
+    get:
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.IPResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get ips by subnet ID
+      tags:
+      - subnets
     post:
       consumes:
       - application/json

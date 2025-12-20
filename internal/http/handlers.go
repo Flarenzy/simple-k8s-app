@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -212,16 +213,27 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.subnetContainsIP(ctx, subnet, ip.Ip) {
-		a.Logger.DebugContext(ctx, "subnet doesn't contain the sent ip", "subnet", subnet.String(), "ip", ip.Ip.String())
+	err = validateIPInSubnet(subnet, ip.Ip)
+	if err != nil {
+		a.Logger.DebugContext(ctx, "invalid ip", "ip", ip.Ip.String(), "subnet", subnet.String())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 		}
 		return
 	}
+
 	respIP, err := a.Queries.CreateIPAddress(ctx, ip)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "unique_ip" {
+			a.Logger.DebugContext(ctx, "tried to enter duplicate ip", "ip", ip.Ip, "err", err.Error())
+			err := encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request, ip exists"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
 		a.Logger.ErrorContext(ctx, "cant create IP address", "err", err, "ip", ip)
 		err := encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error while creating ip"})
 		if err != nil {
@@ -232,6 +244,63 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 	a.Logger.DebugContext(ctx, "ip created", "ip", respIP)
 
 	err = encode(w, r, http.StatusCreated, ipToResponse(respIP))
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+	}
+}
+
+// @Summary Get ips by subnet ID
+// @Tags subnets
+// @Produce json
+// @Param id path int true "Subnet ID"
+// @Success 200 {array} IPResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id}/ips [get]
+func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	strID := r.PathValue("id")
+	id, err := strconv.ParseInt(strID, 10, 64)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	subnetExists, _, err := a.subnetExists(ctx, id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	if !subnetExists {
+		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
+		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	respIPs, err := a.Queries.ListIPsBySubnetID(ctx, id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "can't list ips by subnet id", "id", id, "err", err.Error())
+		err := encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	err = encode(w, r, http.StatusOK, ipsToreponse(respIPs))
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 	}

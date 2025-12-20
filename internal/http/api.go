@@ -40,6 +40,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)
 	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
+	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
 
 	return mux
 }
@@ -55,9 +56,4 @@ func (a *API) subnetExists(ctx context.Context, id int64) (bool, netip.Prefix, e
 		return false, netip.Prefix{}, err
 	}
 	return true, subnet.Cidr, nil
-}
-
-func (a *API) subnetContainsIP(ctx context.Context, subnet netip.Prefix, ip netip.Addr) bool {
-	a.Logger.DebugContext(ctx, "checking if subnet contains ip", "subnet", subnet.String(), "ip", ip.String())
-	return subnet.Contains(ip)
 }
