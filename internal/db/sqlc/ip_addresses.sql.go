@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"net/netip"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createIPAddress = `-- name: CreateIPAddress :one
@@ -68,4 +70,30 @@ func (q *Queries) ListIPsBySubnetID(ctx context.Context, subnetID int64) ([]IpAd
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateIPByUUID = `-- name: UpdateIPByUUID :one
+UPDATE ip_addresses
+SET hostname = $1, updated_at = NOW()
+WHERE id = $2
+RETURNING id, ip, hostname, created_at, updated_at, subnet_id
+`
+
+type UpdateIPByUUIDParams struct {
+	Hostname string      `json:"hostname"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateIPByUUID(ctx context.Context, arg UpdateIPByUUIDParams) (IpAddress, error) {
+	row := q.db.QueryRow(ctx, updateIPByUUID, arg.Hostname, arg.ID)
+	var i IpAddress
+	err := row.Scan(
+		&i.ID,
+		&i.Ip,
+		&i.Hostname,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubnetID,
+	)
+	return i, err
 }
