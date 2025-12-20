@@ -201,6 +201,21 @@ input {
 	font-size: 13px;
 }
 
+.row-click {
+	cursor: pointer;
+}
+
+.row-click:hover td {
+	background: #eef2ff;
+}
+
+.table input {
+	width: 100%;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	padding: 8px 10px;
+}
+
 .modal {
 	position: fixed;
 	inset: 0;
