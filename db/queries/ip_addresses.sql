@@ -7,4 +7,4 @@ ORDER by ip;
 -- name: CreateIPAddress :one
 INSERT INTO ip_addresses (ip, hostname, subnet_id)
 VALUES ($1, $2, $3)
-RETURNING ip, hostname, created_at, updated_at, subnet_id;
+RETURNING id, ip, hostname, created_at, updated_at, subnet_id;

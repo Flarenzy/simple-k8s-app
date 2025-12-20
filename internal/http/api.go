@@ -1,10 +1,14 @@
 package http
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
@@ -35,7 +39,25 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/subnets", a.handleGetAllSubnets)
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)
-	// mux.HandleFunc("/api/v1/ips", a.handleIPs)
+	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
 
 	return mux
+}
+
+func (a *API) subnetExists(ctx context.Context, id int64) (bool, netip.Prefix, error) {
+	subnet, err := a.Queries.GetSubnetByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		a.Logger.DebugContext(ctx, "not found", "id", id, "err", err.Error())
+		return false, netip.Prefix{}, nil
+	}
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unexpected error", "err", err.Error())
+		return false, netip.Prefix{}, err
+	}
+	return true, subnet.Cidr, nil
+}
+
+func (a *API) subnetContainsIP(ctx context.Context, subnet netip.Prefix, ip netip.Addr) bool {
+	a.Logger.DebugContext(ctx, "checking if subnet contains ip", "subnet", subnet.String(), "ip", ip.String())
+	return subnet.Contains(ip)
 }

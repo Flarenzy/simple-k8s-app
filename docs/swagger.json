@@ -135,6 +135,65 @@
                 }
             }
         },
+        "/api/v1/subnets/{id}/ips": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subnets",
+                    "ips"
+                ],
+                "summary": "Create ip under subnet",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet id in which the ip is created",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "IP address to update",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.CreateIPRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/http.IPResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "tags": [
@@ -175,6 +234,19 @@
         }
     },
     "definitions": {
+        "http.CreateIPRequest": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "example": "printer-1"
+                },
+                "ip": {
+                    "type": "string",
+                    "example": "10.0.0.1"
+                }
+            }
+        },
         "http.CreateSubnetRequest": {
             "type": "object",
             "required": [
@@ -197,6 +269,35 @@
                 "error": {
                     "type": "string",
                     "example": "subnet not found"
+                }
+            }
+        },
+        "http.IPResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-05-10T15:04:05Z"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "printer-1"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "50e8400-e29b-41d4-a716-446655440000"
+                },
+                "ip": {
+                    "type": "string",
+                    "example": "10.0.0.1"
+                },
+                "subnet_id": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2024-05-10T15:04:05Z"
                 }
             }
         },

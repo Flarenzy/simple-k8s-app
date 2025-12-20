@@ -1,5 +1,14 @@
 basePath: /
 definitions:
+  http.CreateIPRequest:
+    properties:
+      hostname:
+        example: printer-1
+        type: string
+      ip:
+        example: 10.0.0.1
+        type: string
+    type: object
   http.CreateSubnetRequest:
     properties:
       cidr:
@@ -15,6 +24,27 @@ definitions:
     properties:
       error:
         example: subnet not found
+        type: string
+    type: object
+  http.IPResponse:
+    properties:
+      created_at:
+        example: "2024-05-10T15:04:05Z"
+        type: string
+      hostname:
+        example: printer-1
+        type: string
+      id:
+        example: 50e8400-e29b-41d4-a716-446655440000
+        type: string
+      ip:
+        example: 10.0.0.1
+        type: string
+      subnet_id:
+        example: 4
+        type: integer
+      updated_at:
+        example: "2024-05-10T15:04:05Z"
         type: string
     type: object
   http.SubnetResponse:
@@ -125,6 +155,45 @@ paths:
       summary: Get subnet by ID
       tags:
       - subnets
+  /api/v1/subnets/{id}/ips:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Subnet id in which the ip is created
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: IP address to update
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateIPRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/http.IPResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Create ip under subnet
+      tags:
+      - subnets
+      - ips
   /healthz:
     get:
       responses:

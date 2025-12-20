@@ -118,7 +118,7 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 	strID := r.PathValue("id")
 	id, err := strconv.ParseInt(strID, 10, 64)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "converting string id to int64", "strID", strID, "err", err.Error())
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
@@ -145,5 +145,94 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 	err = encode(w, r, http.StatusOK, subnetToResponse(subnet))
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
+	}
+}
+
+// @Summary Create ip under subnet
+// @Tags subnets, ips
+// @Accept json
+// @Produce json
+// @Param id path int true "Subnet id in which the ip is created"
+// @Param payload body CreateIPRequest true "IP address to update"
+// @Success 201 {object} IPResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id}/ips [post]
+func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	strID := r.PathValue("id")
+	id, err := strconv.ParseInt(strID, 10, 64)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	subnetExists, subnet, err := a.subnetExists(ctx, id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	if !subnetExists {
+		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
+		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	ipReq, err := decode[CreateIPRequest](r)
+	defer r.Body.Close()
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unmarshaling ip from request", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	ip, err := ipReq.toParams(id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "can't parse ip from request", "ip", ipReq.IP, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	if !a.subnetContainsIP(ctx, subnet, ip.Ip) {
+		a.Logger.DebugContext(ctx, "subnet doesn't contain the sent ip", "subnet", subnet.String(), "ip", ip.Ip.String())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+	respIP, err := a.Queries.CreateIPAddress(ctx, ip)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "cant create IP address", "err", err, "ip", ip)
+		err := encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error while creating ip"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+	a.Logger.DebugContext(ctx, "ip created", "ip", respIP)
+
+	err = encode(w, r, http.StatusCreated, ipToResponse(respIP))
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 	}
 }

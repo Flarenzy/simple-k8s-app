@@ -8,14 +8,12 @@ package db
 import (
 	"context"
 	"net/netip"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createIPAddress = `-- name: CreateIPAddress :one
 INSERT INTO ip_addresses (ip, hostname, subnet_id)
 VALUES ($1, $2, $3)
-RETURNING ip, hostname, created_at, updated_at, subnet_id
+RETURNING id, ip, hostname, created_at, updated_at, subnet_id
 `
 
 type CreateIPAddressParams struct {
@@ -24,18 +22,11 @@ type CreateIPAddressParams struct {
 	SubnetID int64      `json:"subnet_id"`
 }
 
-type CreateIPAddressRow struct {
-	Ip        netip.Addr         `json:"ip"`
-	Hostname  string             `json:"hostname"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	SubnetID  int64              `json:"subnet_id"`
-}
-
-func (q *Queries) CreateIPAddress(ctx context.Context, arg CreateIPAddressParams) (CreateIPAddressRow, error) {
+func (q *Queries) CreateIPAddress(ctx context.Context, arg CreateIPAddressParams) (IpAddress, error) {
 	row := q.db.QueryRow(ctx, createIPAddress, arg.Ip, arg.Hostname, arg.SubnetID)
-	var i CreateIPAddressRow
+	var i IpAddress
 	err := row.Scan(
+		&i.ID,
 		&i.Ip,
 		&i.Hostname,
 		&i.CreatedAt,
