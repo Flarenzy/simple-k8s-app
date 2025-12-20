@@ -38,6 +38,30 @@ func (q *Queries) CreateIPAddress(ctx context.Context, arg CreateIPAddressParams
 	return i, err
 }
 
+const getIPByUUIDandSubnetID = `-- name: GetIPByUUIDandSubnetID :one
+SELECT id, ip, hostname, created_at, updated_at, subnet_id FROM ip_addresses
+WHERE id = $1 AND subnet_id = $2
+`
+
+type GetIPByUUIDandSubnetIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	SubnetID int64       `json:"subnet_id"`
+}
+
+func (q *Queries) GetIPByUUIDandSubnetID(ctx context.Context, arg GetIPByUUIDandSubnetIDParams) (IpAddress, error) {
+	row := q.db.QueryRow(ctx, getIPByUUIDandSubnetID, arg.ID, arg.SubnetID)
+	var i IpAddress
+	err := row.Scan(
+		&i.ID,
+		&i.Ip,
+		&i.Hostname,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SubnetID,
+	)
+	return i, err
+}
+
 const listIPsBySubnetID = `-- name: ListIPsBySubnetID :many
 SELECT id, ip, hostname, created_at, updated_at, subnet_id
 FROM ip_addresses

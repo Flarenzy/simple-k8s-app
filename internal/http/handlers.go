@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	db "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 )
@@ -150,11 +151,11 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Create ip under subnet
-// @Tags subnets, ips
+// @Tags subnets
 // @Accept json
 // @Produce json
-// @Param id path int true "Subnet id in which the ip is created"
-// @Param payload body CreateIPRequest true "IP address to update"
+// @Param id path int true "Subnet id in which the ip is created."
+// @Param payload body CreateIPRequest true "IP address to create."
 // @Success 201 {object} IPResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
@@ -162,10 +163,9 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/subnets/{id}/ips [post]
 func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	strID := r.PathValue("id")
-	id, err := strconv.ParseInt(strID, 10, 64)
+	id, err := parsePathInt64(r, "id")
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
@@ -260,10 +260,9 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/subnets/{id}/ips [get]
 func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	strID := r.PathValue("id")
-	id, err := strconv.ParseInt(strID, 10, 64)
+	id, err := parsePathInt64(r, "id")
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
@@ -301,6 +300,107 @@ func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = encode(w, r, http.StatusOK, ipsToreponse(respIPs))
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+	}
+}
+
+// @Summary Update ip under subnet
+// @Tags subnets
+// @Accept json
+// @Produce json
+// @Param id path int true "Subnet id in which the ip is updated."
+// @Param uuid path string true "UUID of the ip to be updated."
+// @Param payload body UpdateIPRequest true "IP address to update"
+// @Success 200 {object} IPResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id}/ips/{uuid} [patch]
+func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := parsePathInt64(r, "id")
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	strUUID := r.PathValue("uuid")
+	reqUuid, err := strToUUID(strUUID)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "invalid uuid", "uuid", strUUID, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	reqHostname, err := decode[UpdateIPRequest](r)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "can't unmarshal hostname in request", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	subnetExists, _, err := a.subnetExists(ctx, id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	if !subnetExists {
+		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
+		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	_, err = a.Queries.GetIPByUUIDandSubnetID(ctx, db.GetIPByUUIDandSubnetIDParams{
+		ID:       reqUuid,
+		SubnetID: id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			a.Logger.DebugContext(ctx, "ip for uuid not found", "uuid", reqUuid.String(), "err", err.Error())
+			err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "ip not found"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
+		a.Logger.ErrorContext(ctx, "uncaught error", "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	respIP, err := a.Queries.UpdateIPByUUID(ctx, reqHostname.toParams(reqUuid))
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "failed to update IP with given UUID", "uuid", reqUuid.String(), "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	err = encode(w, r, http.StatusOK, ipToResponse(respIP))
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 	}

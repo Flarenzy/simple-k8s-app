@@ -6,6 +6,7 @@ import (
 	"time"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // SubnetResponse is a simplified view returned to clients and used in Swagger.
@@ -42,6 +43,11 @@ type IPResponse struct {
 type CreateIPRequest struct {
 	IP       string `json:"ip" example:"10.0.0.1"`
 	Hostname string `json:"hostname" example:"printer-1"`
+}
+
+// UpdateIPRequest is the payload accepted when updating an ip.
+type UpdateIPRequest struct {
+	Hostname string `json:"hostname" example:"pc-1"`
 }
 
 func subnetToResponse(s sqlc.Subnet) SubnetResponse {
@@ -103,4 +109,11 @@ func (i CreateIPRequest) toParams(id int64) (sqlc.CreateIPAddressParams, error) 
 		SubnetID: id,
 	}, nil
 
+}
+
+func (r UpdateIPRequest) toParams(id pgtype.UUID) sqlc.UpdateIPByUUIDParams {
+	return sqlc.UpdateIPByUUIDParams{
+		Hostname: r.Hostname,
+		ID:       id,
+	}
 }

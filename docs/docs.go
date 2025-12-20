@@ -197,20 +197,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subnets",
-                    "ips"
+                    "subnets"
                 ],
                 "summary": "Create ip under subnet",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Subnet id in which the ip is created",
+                        "description": "Subnet id in which the ip is created.",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "IP address to update",
+                        "description": "IP address to create.",
                         "name": "payload",
                         "in": "body",
                         "required": true,
@@ -222,6 +221,71 @@ const docTemplate = `{
                 "responses": {
                     "201": {
                         "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/http.IPResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subnets/{id}/ips/{uuid}": {
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subnets"
+                ],
+                "summary": "Update ip under subnet",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet id in which the ip is updated.",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the ip to be updated.",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "IP address to update",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.UpdateIPRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/http.IPResponse"
                         }
@@ -376,6 +440,15 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2024-05-10T15:04:05Z"
+                }
+            }
+        },
+        "http.UpdateIPRequest": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "example": "pc-1"
                 }
             }
         }
