@@ -201,12 +201,18 @@ export default function App() {
 		setSavingIp(ip);
 		setIpSaveError(null);
 		const existing = ipMap.get(ip);
-		const method = existing && existing.hostname ? "PATCH" : "POST";
+		const usePatch = existing !== undefined && existing.hostname !== "";
 		try {
-			const resp = await fetch(`${API_BASE}/subnets/${selectedSubnet.id}/ips`, {
+			const url = usePatch
+				? `${API_BASE}/subnets/${selectedSubnet.id}/ips/${existing?.id}`
+				: `${API_BASE}/subnets/${selectedSubnet.id}/ips`;
+			const method = usePatch ? "PATCH" : "POST";
+			const body = usePatch ? { hostname } : { ip, hostname };
+
+			const resp = await fetch(url, {
 				method,
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ ip, hostname }),
+				body: JSON.stringify(body),
 			});
 			if (!resp.ok) {
 				const text = await resp.text();
