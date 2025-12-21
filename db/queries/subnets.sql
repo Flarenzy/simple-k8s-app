@@ -12,3 +12,11 @@ RETURNING id, cidr, description, created_at, updated_at;
 SELECT id, cidr, description, created_at, updated_at
 FROM subnets
 WHERE id = $1;
+
+-- name: DeleteSubnetByID :one
+WITH deleted_rows AS (
+    DELETE FROM subnets
+    WHERE id = $1
+    RETURNING *
+)
+SELECT count(*) FROM deleted_rows;

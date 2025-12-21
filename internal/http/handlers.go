@@ -465,3 +465,45 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 
 }
+
+// @Summary Delete subnet
+// @Tags subnets
+// @Param id path int true "Subnet ID of the subnet to delete."
+// @Success 204 "No content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id} [delete]
+func (a *API) handleDeleteSubnetByID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := parsePathInt64(r, "id")
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	numOfDelRows, err := a.Queries.DeleteSubnetByID(ctx, id)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "uncaught error while deleting subnet", "id", id, "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	if numOfDelRows == 0 {
+		a.Logger.DebugContext(ctx, "subnet id not found", "id", id)
+		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

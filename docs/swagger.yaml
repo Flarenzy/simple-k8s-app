@@ -132,6 +132,31 @@ paths:
       tags:
       - subnets
   /api/v1/subnets/{id}:
+    delete:
+      parameters:
+      - description: Subnet ID of the subnet to delete.
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Delete subnet
+      tags:
+      - subnets
     get:
       parameters:
       - description: Subnet ID

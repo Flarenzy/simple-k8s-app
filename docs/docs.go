@@ -139,6 +139,44 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "tags": [
+                    "subnets"
+                ],
+                "summary": "Delete subnet",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet ID of the subnet to delete.",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/v1/subnets/{id}/ips": {

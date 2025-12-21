@@ -34,6 +34,22 @@ func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Sub
 	return i, err
 }
 
+const deleteSubnetByID = `-- name: DeleteSubnetByID :one
+WITH deleted_rows AS (
+    DELETE FROM subnets
+    WHERE id = $1
+    RETURNING id, cidr, description, created_at, updated_at
+)
+SELECT count(*) FROM deleted_rows
+`
+
+func (q *Queries) DeleteSubnetByID(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, deleteSubnetByID, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getSubnetByID = `-- name: GetSubnetByID :one
 SELECT id, cidr, description, created_at, updated_at
 FROM subnets

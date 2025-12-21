@@ -39,6 +39,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/subnets", a.handleGetAllSubnets)
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)
+	mux.HandleFunc("DELETE /api/v1/subnets/{id}", a.handleDeleteSubnetByID)
 	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
 	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)
