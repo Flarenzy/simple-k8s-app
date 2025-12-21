@@ -405,3 +405,63 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 	}
 }
+
+// @Summary Delete ip under subnet
+// @Tags subnets
+// @Accept json
+// @Produce json
+// @Param id path int true "Subnet id in which the ip is deleted."
+// @Param uuid path string true "UUID of the ip to be deleted."
+// @Success 204 "No content"
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id}/ips/{uuid} [delete]
+func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := parsePathInt64(r, "id")
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	strUUID := r.PathValue("uuid")
+	reqUuid, err := strToUUID(strUUID)
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "invalid uuid", "uuid", strUUID, "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	_, err = a.Queries.DeleteIPByUUIDandSubnetID(ctx, db.DeleteIPByUUIDandSubnetIDParams{
+		ID:       reqUuid,
+		SubnetID: id,
+	})
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			a.Logger.DebugContext(ctx, "subnet id or ip uuid not found", "id", id, "uuid", reqUuid.String(), "err", err.Error())
+			err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet or ip not found"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
+		a.Logger.ErrorContext(ctx, "uncaught error while deleting for ip", "id", id, "uuid", reqUuid.String(), "err", err.Error())
+		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+}

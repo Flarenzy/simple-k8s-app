@@ -38,6 +38,24 @@ func (q *Queries) CreateIPAddress(ctx context.Context, arg CreateIPAddressParams
 	return i, err
 }
 
+const deleteIPByUUIDandSubnetID = `-- name: DeleteIPByUUIDandSubnetID :one
+DELETE FROM ip_addresses
+WHERE id = $1 AND subnet_id = $2
+RETURNING 1
+`
+
+type DeleteIPByUUIDandSubnetIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	SubnetID int64       `json:"subnet_id"`
+}
+
+func (q *Queries) DeleteIPByUUIDandSubnetID(ctx context.Context, arg DeleteIPByUUIDandSubnetIDParams) (int32, error) {
+	row := q.db.QueryRow(ctx, deleteIPByUUIDandSubnetID, arg.ID, arg.SubnetID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getIPByUUIDandSubnetID = `-- name: GetIPByUUIDandSubnetID :one
 SELECT id, ip, hostname, created_at, updated_at, subnet_id FROM ip_addresses
 WHERE id = $1 AND subnet_id = $2

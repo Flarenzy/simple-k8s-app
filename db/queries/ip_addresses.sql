@@ -18,3 +18,8 @@ RETURNING id, ip, hostname, created_at, updated_at, subnet_id;
 -- name: GetIPByUUIDandSubnetID :one
 SELECT * FROM ip_addresses
 WHERE id = $1 AND subnet_id = $2;
+
+-- name: DeleteIPByUUIDandSubnetID :one
+DELETE FROM ip_addresses
+WHERE id = $1 AND subnet_id = $2
+RETURNING 1;
