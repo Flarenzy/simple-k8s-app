@@ -125,6 +125,16 @@ input {
 	background: #f8fafc;
 }
 
+.danger {
+	border-color: #fecdd3;
+	color: #b91c1c;
+	background: #fff5f5;
+}
+
+.danger:hover {
+	background: #ffe4e6;
+}
+
 .error {
 	color: #b91c1c;
 	background: #fef2f2;

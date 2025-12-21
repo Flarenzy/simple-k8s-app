@@ -37,6 +37,10 @@ export default function App() {
 	const [hostnameDrafts, setHostnameDrafts] = useState<Record<string, string>>({});
 	const [savingIp, setSavingIp] = useState<string | null>(null);
 	const [ipSaveError, setIpSaveError] = useState<string | null>(null);
+	const [ipDeleteError, setIpDeleteError] = useState<string | null>(null);
+	const [deletingIp, setDeletingIp] = useState<string | null>(null);
+	const [deletingSubnetId, setDeletingSubnetId] = useState<number | null>(null);
+	const [deleteSubnetError, setDeleteSubnetError] = useState<string | null>(null);
 	const [showCreate, setShowCreate] = useState(false);
 	const [newCidr, setNewCidr] = useState("");
 	const [newDesc, setNewDesc] = useState("");
@@ -89,6 +93,10 @@ export default function App() {
 		setHostnameDrafts({});
 		setSavingIp(null);
 		setIpSaveError(null);
+		setIpDeleteError(null);
+		setDeletingIp(null);
+		setDeletingSubnetId(null);
+		setDeleteSubnetError(null);
 		setShowCreate(false);
 		setNewCidr("");
 		setNewDesc("");
@@ -196,18 +204,53 @@ export default function App() {
 		void createSubnet();
 	};
 
+	const performDeleteIp = async (ipAddress: string, id: string) => {
+		if (!selectedSubnet) return;
+		setDeletingIp(ipAddress);
+		setIpDeleteError(null);
+		try {
+			const resp = await fetch(`${API_BASE}/subnets/${selectedSubnet.id}/ips/${id}`, { method: "DELETE" });
+			if (!resp.ok) {
+				const text = await resp.text();
+				throw new Error(text || `request failed: ${resp.status}`);
+			}
+			setIps((prev) => prev.filter((ip) => ip.ip !== ipAddress));
+			setHostnameDrafts((prev) => {
+				const next = { ...prev };
+				delete next[ipAddress];
+				return next;
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "unknown error";
+			setIpDeleteError(message);
+		} finally {
+			setDeletingIp(null);
+		}
+	};
+
 	const saveIpHostname = async (ip: string, hostname: string) => {
 		if (!selectedSubnet) return;
 		setSavingIp(ip);
 		setIpSaveError(null);
 		const existing = ipMap.get(ip);
+		const trimmedHostname = hostname.trim();
 		const usePatch = existing !== undefined && existing.hostname !== "";
+
+		// Treat clearing hostname as a delete when the record exists.
+		if (usePatch && trimmedHostname === "") {
+			setSavingIp(null);
+			if (existing?.id) {
+				await performDeleteIp(ip, existing.id);
+			}
+			return;
+		}
+
 		try {
 			const url = usePatch
 				? `${API_BASE}/subnets/${selectedSubnet.id}/ips/${existing?.id}`
 				: `${API_BASE}/subnets/${selectedSubnet.id}/ips`;
 			const method = usePatch ? "PATCH" : "POST";
-			const body = usePatch ? { hostname } : { ip, hostname };
+			const body = usePatch ? { hostname: trimmedHostname } : { ip, hostname: trimmedHostname };
 
 			const resp = await fetch(url, {
 				method,
@@ -229,6 +272,35 @@ export default function App() {
 		} finally {
 			setSavingIp(null);
 		}
+	};
+
+	const deleteSubnet = async (subnet: Subnet) => {
+		setDeletingSubnetId(subnet.id);
+		setDeleteSubnetError(null);
+		try {
+			const resp = await fetch(`${API_BASE}/subnets/${subnet.id}`, { method: "DELETE" });
+			if (!resp.ok) {
+				const text = await resp.text();
+				throw new Error(text || `request failed: ${resp.status}`);
+			}
+			setSubnets((prev) => prev.filter((s) => s.id !== subnet.id));
+			if (selectedSubnet?.id === subnet.id) {
+				setSelectedSubnet(null);
+				setView("home");
+				setIps([]);
+			}
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "unknown error";
+			setDeleteSubnetError(message);
+		} finally {
+			setDeletingSubnetId(null);
+		}
+	};
+
+	const deleteIp = async (ipAddress: string) => {
+		const record = ipMap.get(ipAddress);
+		if (!record) return;
+		await performDeleteIp(ipAddress, record.id);
 	};
 
 	if (view === "home") {
@@ -266,6 +338,7 @@ export default function App() {
 									<th>Description</th>
 									<th>Usage</th>
 									<th>Updated</th>
+									<th />
 								</tr>
 							</thead>
 							<tbody>
@@ -289,6 +362,19 @@ export default function App() {
 											<td>{subnet.description || "—"}</td>
 											<td className="muted">N/A</td>
 											<td className="muted">{new Date(subnet.updated_at).toLocaleString()}</td>
+											<td>
+												<button
+													className="secondary danger"
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														void deleteSubnet(subnet);
+													}}
+													disabled={deletingSubnetId === subnet.id}
+												>
+													{deletingSubnetId === subnet.id ? "Deleting..." : "Delete"}
+												</button>
+											</td>
 										</tr>
 									))
 								)}
@@ -368,6 +454,7 @@ export default function App() {
 					{ipsLoading ? <div className="muted">Loading IPs...</div> : null}
 					{ipsError ? <div className="error">Failed to load IPs: {ipsError}</div> : null}
 					{ipSaveError ? <div className="error">Save failed: {ipSaveError}</div> : null}
+					{ipDeleteError ? <div className="error">Delete failed: {ipDeleteError}</div> : null}
 					{allIps.length === 0 ? <div className="error">Cannot render IPs for this subnet.</div> : null}
 
 					<table className="table">
