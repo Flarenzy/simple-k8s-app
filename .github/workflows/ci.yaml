@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "24"
+  REGISTRY: ghcr.io
+  IMAGE_API: ipam-api
+  IMAGE_FE: ipam-fe
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  build-and-push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.name }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:latest
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+
+      - name: Cleanup old images
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_NAME: ${{ matrix.image }}
+        run: |
+          # keep latest 3 versions
+          mapfile -t versions < <(gh api -H "Accept: application/vnd.github+json" \
+            "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${PACKAGE_NAME}/versions?per_page=100" \
+            | jq -r '.[].id')
+          to_delete=("${versions[@]:3}")
+          for id in "${to_delete[@]}"; do
+            gh api -X DELETE "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${PACKAGE_NAME}/versions/${id}"
+          done
+    strategy:
+      matrix:
+        include:
+          - name: api
+            image: ${{ env.IMAGE_API }}
+          - name: fe
+            image: ${{ env.IMAGE_FE }}
