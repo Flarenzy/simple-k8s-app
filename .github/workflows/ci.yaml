@@ -14,8 +14,6 @@ env:
   GO_VERSION: "1.25"
   NODE_VERSION: "24"
   REGISTRY: ghcr.io
-  IMAGE_API: ipam-api
-  IMAGE_FE: ipam-fe
 
 jobs:
   test:
@@ -91,6 +89,6 @@ jobs:
       matrix:
         include:
           - name: api
-            image: ${{ env.IMAGE_API }}
+            image: ipam-api
           - name: fe
-            image: ${{ env.IMAGE_FE }}
+            image: ipam-fe
