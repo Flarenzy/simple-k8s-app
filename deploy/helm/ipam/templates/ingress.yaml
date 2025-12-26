@@ -37,7 +37,7 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{- if eq .service.name "api" -}}{{ $apiName }}{{- else if eq .service.name "fe" -}}{{ $feName }}{{- else -}}{{ .service.name }}{{- end }}
+                name: {{ if eq .service.name "api" }}{{ $apiName }}{{ else if eq .service.name "fe" }}{{ $feName }}{{ else }}{{ .service.name }}{{ end }}
                 port:
                   number: {{ .service.port }}
           {{- end }}
