@@ -40,6 +40,18 @@ spec:
           {{- end }}
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          env:
+            - name: DB_CONN
+              {{- if or .Values.db.existingSecret .Values.db.connString }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ipam.dbSecretName" . }}
+                  key: DB_CONN
+              {{- else }}
+              value: ""
+              {{- end }}
+            - name: PORT
+              value: {{ .Values.api.env.PORT | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port }}

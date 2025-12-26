@@ -25,5 +25,14 @@ spec:
           imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
           env:
             - name: DB_CONN
-              value: {{ default .Values.api.env.DB_CONN .Values.migrations.dbConn | quote }}
+              {{- if or .Values.db.existingSecret .Values.db.connString }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ipam.dbSecretName" . }}
+                  key: DB_CONN
+              {{- else if .Values.migrations.dbConn }}
+              value: {{ .Values.migrations.dbConn | quote }}
+              {{- else }}
+              value: ""
+              {{- end }}
 {{- end }}

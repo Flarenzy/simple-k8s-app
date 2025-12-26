@@ -74,6 +74,14 @@ Create the name of the service account to use
 {{- define "ipam.apiFullname" -}}{{ include "ipam.fullname" . }}-api{{- end -}}
 {{- define "ipam.feFullname" -}}{{ include "ipam.fullname" . }}-fe{{- end -}}
 
+{{- define "ipam.dbSecretName" -}}
+{{- if .Values.db.existingSecret }}
+{{- .Values.db.existingSecret }}
+{{- else }}
+{{- printf "%s-db" (include "ipam.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+
 {{- define "ipam.apiSelectorLabels" -}}
 {{ include "ipam.selectorLabels" . }}
 app.kubernetes.io/component: api
