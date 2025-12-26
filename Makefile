@@ -36,6 +36,14 @@ docs:
 format:
 	gofmt -w $(GO_FILES)
 
+docker-api:
+	docker build -f deploy/docker/Dockerfile.api -t $(APP_NAME)-api:latest .
+
+docker-fe:
+	docker build -f deploy/docker/Dockerfile.fe -t $(APP_NAME)-fe:latest .
+
+docker-all: docker-api docker-fe
+
 ## ------------------------------
 ## Database (docker-compose)
 ## ------------------------------
