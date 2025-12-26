@@ -42,7 +42,10 @@ docker-api:
 docker-fe:
 	docker build -f deploy/docker/Dockerfile.fe -t $(APP_NAME)-fe:latest .
 
-docker-all: docker-api docker-fe
+docker-migrate:
+	docker build -f deploy/docker/Dockerfile.migrate -t $(APP_NAME)-migrate:latest .
+
+docker-all: docker-api docker-fe docker-migrate
 
 ## ------------------------------
 ## Database (docker-compose)

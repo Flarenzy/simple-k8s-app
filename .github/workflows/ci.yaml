@@ -97,3 +97,5 @@ jobs:
             image: ipam-api
           - name: fe
             image: ipam-fe
+          - name: migrate
+            image: ipam-migrate
