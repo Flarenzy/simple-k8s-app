@@ -1,4 +1,6 @@
 {{- if .Values.ingress.enabled -}}
+{{- $apiName := include "ipam.apiFullname" . -}}
+{{- $feName := include "ipam.feFullname" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -35,9 +37,9 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "ipam.fullname" $ }}
+                name: {{- if eq .service.name "api" -}}{{ $apiName }}{{- else if eq .service.name "fe" -}}{{ $feName }}{{- else -}}{{ .service.name }}{{- end }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ .service.port }}
           {{- end }}
     {{- end }}
 {{- end }}
