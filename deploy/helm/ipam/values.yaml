@@ -112,7 +112,7 @@ ingress:
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
-    - host: ipam.local
+    - host: ""
       paths:
         - path: /api
           pathType: Prefix
