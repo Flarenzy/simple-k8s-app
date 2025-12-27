@@ -20,5 +20,22 @@ services:
       timeout: 3s
       retries: 5
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: "ipam-keycloak"
+    command: start-dev --http-port=8080
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/ipam
+      KC_DB_USERNAME: ipam
+      KC_DB_PASSWORD: ipam
+    ports:
+      - 8080:8080
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   ipam-db-data:

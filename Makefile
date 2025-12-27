@@ -48,25 +48,25 @@ docker-migrate:
 docker-all: docker-api docker-fe docker-migrate
 
 ## ------------------------------
-## Database (docker-compose)
+## Dev stack (docker-compose)
 ## ------------------------------
 
-db-up:
-	@echo "Starting Postgres..."
+dev-up:
+	@echo "Starting dev stack (db + keycloak)..."
 	$(COMPOSE) up -d
 
-db-down:
-	@echo "Stopping Postgres..."
+dev-down:
+	@echo "Stopping dev stack..."
 	$(COMPOSE) down
 
-db-restart:
-	$(MAKE) db-down
-	$(MAKE) db-up
+dev-restart:
+	$(MAKE) dev-down
+	$(MAKE) dev-up
 
-db-logs:
-	$(COMPOSE) logs -f db
+dev-logs:
+	$(COMPOSE) logs -f
 
-db-ps:
+dev-ps:
 	$(COMPOSE) ps
 
 ## ------------------------------
