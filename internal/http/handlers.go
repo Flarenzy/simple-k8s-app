@@ -38,6 +38,7 @@ func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 
 // @Summary List subnets
 // @Tags subnets
+// @Security BearerAuth
 // @Produce json
 // @Success 200 {array} SubnetResponse
 // @Failure 500 {object} ErrorResponse
@@ -61,6 +62,7 @@ func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Create subnet
 // @Tags subnets
+// @Security BearerAuth
 // @Accept json
 // @Produce json
 // @Param subnet body CreateSubnetRequest true "Subnet payload"
@@ -108,6 +110,7 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Get subnet by ID
 // @Tags subnets
+// @Security BearerAuth
 // @Produce json
 // @Param id path int true "Subnet ID"
 // @Success 200 {object} SubnetResponse
@@ -152,6 +155,7 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Create ip under subnet
 // @Tags subnets
+// @Security BearerAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "Subnet id in which the ip is created."
@@ -251,6 +255,7 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Get ips by subnet ID
 // @Tags subnets
+// @Security BearerAuth
 // @Produce json
 // @Param id path int true "Subnet ID"
 // @Success 200 {array} IPResponse
@@ -307,6 +312,7 @@ func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Update ip under subnet
 // @Tags subnets
+// @Security BearerAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "Subnet id in which the ip is updated."
@@ -408,6 +414,7 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 
 // @Summary Delete ip under subnet
 // @Tags subnets
+// @Security BearerAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "Subnet id in which the ip is deleted."
@@ -468,6 +475,7 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 
 // @Summary Delete subnet
 // @Tags subnets
+// @Security BearerAuth
 // @Param id path int true "Subnet ID of the subnet to delete."
 // @Success 204 "No content"
 // @Failure 400 {object} ErrorResponse

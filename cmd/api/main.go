@@ -25,7 +25,9 @@ import (
 //	@host		localhost:4040
 //	@BasePath	/
 
-//	@securityDefinitions.basic	BasicAuth
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

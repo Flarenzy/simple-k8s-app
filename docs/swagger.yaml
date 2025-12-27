@@ -100,6 +100,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: List subnets
       tags:
       - subnets
@@ -128,6 +130,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create subnet
       tags:
       - subnets
@@ -154,6 +158,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete subnet
       tags:
       - subnets
@@ -183,6 +189,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get subnet by ID
       tags:
       - subnets
@@ -215,6 +223,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get ips by subnet ID
       tags:
       - subnets
@@ -252,6 +262,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create ip under subnet
       tags:
       - subnets
@@ -287,6 +299,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete ip under subnet
       tags:
       - subnets
@@ -329,6 +343,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Update ip under subnet
       tags:
       - subnets
@@ -357,6 +373,8 @@ paths:
       tags:
       - health
 securityDefinitions:
-  BasicAuth:
-    type: basic
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
