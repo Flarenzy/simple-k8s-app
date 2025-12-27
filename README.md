@@ -39,3 +39,19 @@ Prereqs: `minikube` (with the ingress addon), `helm`, access to GHCR images, and
 Notes:
 - Migration hook runs as a Helm post-install/upgrade job using the `ipam-migrate` image; ensure `DB_CONN` secret exists before deploying.
 - Images are published to GHCR: `ghcr.io/flarenzy/ipam-api`, `ghcr.io/flarenzy/ipam-fe`, `ghcr.io/flarenzy/ipam-migrate`.
+
+## Optional: Keycloak
+
+- The chart can deploy Bitnami Keycloak as a dependency. Enable it and set admin creds:
+  ```bash
+  helm upgrade --install ipam deploy/helm/ipam -n ipam \
+    --set db.existingSecret=ipam-db \
+    --set ingress.enabled=true \
+    --set ingress.className=nginx \
+    --set keycloak.enabled=true \
+    --set keycloak.auth.adminUser=admin \
+    --set keycloak.auth.adminPassword=changeme \
+    --set keycloak.ingress.hostname=keycloak.local
+  ```
+  Add `keycloak.local` to `/etc/hosts` pointing to the minikube IP (or leave it empty to use the IP directly).
+- API/FE are not yet wired to Keycloak; once enabled, configure API OIDC (issuer/audience) and FE auth (realm/client) accordingly.

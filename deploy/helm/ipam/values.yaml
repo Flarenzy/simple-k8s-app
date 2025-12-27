@@ -104,6 +104,19 @@ db:
   # If set, chart will create a secret with this connection string under key DB_CONN.
   connString: ""
 
+keycloak:
+  enabled: false
+  auth:
+    adminUser: admin
+    adminPassword: changeme
+  proxyAddressForwarding: true
+  # Ingress for Keycloak (optional)
+  ingress:
+    enabled: true
+    hostname: keycloak.local
+    ingressClassName: nginx
+    tls: false
+
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
   enabled: false
