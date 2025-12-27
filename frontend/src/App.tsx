@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import keycloak from "./keycloak";
 
 type View = "home" | "subnet";
@@ -557,35 +557,6 @@ useEffect(() => {
 		);
 	}
 
-	return (
-		<div className="page page--center">
-			<form className="card" onSubmit={handleSubmit}>
-				<div className="card__header">
-					<p className="eyebrow">Simple IPAM</p>
-					<h1 className="title">Sign in</h1>
-					<p className="muted">Use username admin. Password is ignored.</p>
-				</div>
-
-				<label className="field">
-					<span>Username</span>
-					<input
-						value={username}
-						onChange={(e) => setUsername(e.target.value)}
-						placeholder="admin"
-						autoFocus
-						required
-					/>
-				</label>
-
-				<label className="field">
-					<span>Password</span>
-					<input
-						type="password"
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-						placeholder="••••••••"
-					/>
-				</label>
-
-	);
+	// Should never reach here because auth flow returns earlier.
+	return null;
 }
