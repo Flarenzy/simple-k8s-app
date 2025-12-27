@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import keycloak from "./keycloak";
 
-type View = "login" | "home" | "subnet";
+type View = "home" | "subnet";
 
 type Subnet = {
 	id: number;
@@ -19,14 +20,10 @@ type IPAddress = {
 	updated_at: string;
 };
 
-const ADMIN_USERNAME = "admin";
 const API_BASE = "/api/v1";
 
 export default function App() {
-	const [username, setUsername] = useState("");
-	const [password, setPassword] = useState("");
-	const [view, setView] = useState<View>("login");
-	const [error, setError] = useState<string | null>(null);
+	const [view, setView] = useState<View>("home");
 	const [subnets, setSubnets] = useState<Subnet[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -46,14 +43,39 @@ export default function App() {
 	const [newDesc, setNewDesc] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [saveError, setSaveError] = useState<string | null>(null);
+	const [authReady, setAuthReady] = useState(false);
+	const [authError, setAuthError] = useState<string | null>(null);
+	const [token, setToken] = useState<string | null>(null);
 
 	const isAdmin = useMemo(() => view === "home", [view]);
+
+	const ensureToken = async () => {
+		if (keycloak.isTokenExpired(30)) {
+			try {
+				await keycloak.updateToken(30);
+				setToken(keycloak.token ?? null);
+			} catch (err) {
+				setAuthError("session expired");
+				return null;
+			}
+		}
+		return keycloak.token;
+	};
+
+	const fetchWithAuth = async (input: RequestInfo | URL, init: RequestInit = {}) => {
+		const tk = await ensureToken();
+		const headers = new Headers(init.headers || {});
+		if (tk) {
+			headers.set("Authorization", `Bearer ${tk}`);
+		}
+		return fetch(input, { ...init, headers });
+	};
 
 	const fetchSubnets = async () => {
 		setLoading(true);
 		setLoadError(null);
 		try {
-			const resp = await fetch(`${API_BASE}/subnets`);
+			const resp = await fetchWithAuth(`${API_BASE}/subnets`);
 			if (!resp.ok) {
 				throw new Error(`request failed: ${resp.status}`);
 			}
@@ -67,23 +89,8 @@ export default function App() {
 		}
 	};
 
-	const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
-		setError(null);
-
-		if (username.trim() === ADMIN_USERNAME) {
-			setView("home");
-			return;
-		}
-
-		setError("Invalid username. Use admin to continue.");
-	};
-
 	const reset = () => {
-		setUsername("");
-		setPassword("");
-		setView("login");
-		setError(null);
+		setView("home");
 		setSubnets([]);
 		setLoadError(null);
 		setSelectedSubnet(null);
@@ -104,11 +111,37 @@ export default function App() {
 		setSaveError(null);
 	};
 
-	useEffect(() => {
-		if (view !== "home") return;
+useEffect(() => {
+		let cancelled = false;
+		keycloak
+			.init({ onLoad: "login-required", checkLoginIframe: false })
+			.then((authenticated) => {
+				if (cancelled) return;
+				if (!authenticated) {
+					setAuthError("not authenticated");
+					return;
+				}
+				setToken(keycloak.token ?? null);
+				keycloak.onTokenExpired = () => {
+					keycloak.updateToken(30).then((refreshed) => {
+						if (refreshed) {
+							setToken(keycloak.token ?? null);
+						}
+					});
+				};
+				setAuthReady(true);
+				fetchSubnets();
+			})
+			.catch((err) => {
+				if (cancelled) return;
+				setAuthError(err instanceof Error ? err.message : "auth init failed");
+			});
 
-		fetchSubnets();
-	}, [view]);
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	useEffect(() => {
 		if (view !== "subnet" || !selectedSubnet) return;
@@ -117,7 +150,7 @@ export default function App() {
 			setIpsLoading(true);
 			setIpsError(null);
 			try {
-				const resp = await fetch(`${API_BASE}/subnets/${selectedSubnet.id}/ips`);
+				const resp = await fetchWithAuth(`${API_BASE}/subnets/${selectedSubnet.id}/ips`);
 				if (!resp.ok) {
 					throw new Error(`request failed: ${resp.status}`);
 				}
@@ -173,7 +206,7 @@ export default function App() {
 		setSaving(true);
 		setSaveError(null);
 		try {
-			const resp = await fetch(`${API_BASE}/subnets`, {
+			const resp = await fetchWithAuth(`${API_BASE}/subnets`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ cidr: newCidr.trim(), description: newDesc.trim() }),
@@ -209,7 +242,7 @@ export default function App() {
 		setDeletingIp(ipAddress);
 		setIpDeleteError(null);
 		try {
-			const resp = await fetch(`${API_BASE}/subnets/${selectedSubnet.id}/ips/${id}`, { method: "DELETE" });
+			const resp = await fetchWithAuth(`${API_BASE}/subnets/${selectedSubnet.id}/ips/${id}`, { method: "DELETE" });
 			if (!resp.ok) {
 				const text = await resp.text();
 				throw new Error(text || `request failed: ${resp.status}`);
@@ -252,7 +285,7 @@ export default function App() {
 			const method = usePatch ? "PATCH" : "POST";
 			const body = usePatch ? { hostname: trimmedHostname } : { ip, hostname: trimmedHostname };
 
-			const resp = await fetch(url, {
+			const resp = await fetchWithAuth(url, {
 				method,
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(body),
@@ -278,7 +311,7 @@ export default function App() {
 		setDeletingSubnetId(subnet.id);
 		setDeleteSubnetError(null);
 		try {
-			const resp = await fetch(`${API_BASE}/subnets/${subnet.id}`, { method: "DELETE" });
+			const resp = await fetchWithAuth(`${API_BASE}/subnets/${subnet.id}`, { method: "DELETE" });
 			if (!resp.ok) {
 				const text = await resp.text();
 				throw new Error(text || `request failed: ${resp.status}`);
@@ -303,15 +336,26 @@ export default function App() {
 		await performDeleteIp(ipAddress, record.id);
 	};
 
+	if (!authReady) {
+		return (
+			<div className="page page--center">
+				<div className="card">
+					<h1 className="title">Signing you in…</h1>
+					{authError ? <div className="error">{authError}</div> : <p className="muted">Redirecting to Keycloak.</p>}
+				</div>
+			</div>
+		);
+	}
+
 	if (view === "home") {
 		return (
 			<div className="page">
 				<header className="header">
 					<div>
-						<div className="eyebrow">Logged in as</div>
-						<div className="title">{ADMIN_USERNAME}</div>
+						<div className="eyebrow">Logged in</div>
+						<div className="title">IPAM</div>
 					</div>
-					<button className="secondary" onClick={reset}>
+					<button className="secondary" onClick={() => keycloak.logout()}>
 						Log out
 					</button>
 				</header>
@@ -438,7 +482,7 @@ export default function App() {
 							← Back
 						</button>
 					</div>
-					<button className="secondary" onClick={reset}>
+					<button className="secondary" onClick={() => keycloak.logout()}>
 						Log out
 					</button>
 				</header>
@@ -543,12 +587,5 @@ export default function App() {
 					/>
 				</label>
 
-				{error ? <div className="error">{error}</div> : null}
-
-				<button className="primary" type="submit">
-					Continue
-				</button>
-			</form>
-		</div>
 	);
 }

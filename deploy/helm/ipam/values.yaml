@@ -14,6 +14,10 @@ api:
   service:
     type: ClusterIP
     port: 4040
+  auth:
+    enabled: false
+    issuer: ""
+    audience: ""
   livenessProbe:
     httpGet:
       path: /healthz

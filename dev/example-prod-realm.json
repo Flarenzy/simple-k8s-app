@@ -1,0 +1,24 @@
+{
+  "realm": "ipam",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "ipam-api",
+      "name": "IPAM API",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "redirectUris": ["https://ipam.yourdomain.com/*"],
+      "webOrigins": ["https://ipam.yourdomain.com"]
+    },
+    {
+      "clientId": "ipam-fe",
+      "name": "IPAM Frontend",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "redirectUris": ["https://ipam.yourdomain.com/*"],
+      "webOrigins": ["https://ipam.yourdomain.com"]
+    }
+  ]
+}

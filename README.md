@@ -54,4 +54,6 @@ Notes:
     --set keycloak.ingress.hostname=keycloak.local
   ```
   Add `keycloak.local` to `/etc/hosts` pointing to the minikube IP (or leave it empty to use the IP directly).
-- API/FE are not yet wired to Keycloak; once enabled, configure API OIDC (issuer/audience) and FE auth (realm/client) accordingly.
+- API auth toggle/env:
+  - Helm values: `api.auth.enabled`, `api.auth.issuer`, `api.auth.audience`. When enabled, the API requires a Bearer token (skips `/healthz` and `/readyz` and Swagger). Issuer should be the realm URL, audience the client ID.
+  - Frontend is not yet wired to Keycloak; once ready, configure Keycloak JS/redirects and pass tokens to the API.

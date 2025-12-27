@@ -8,23 +8,30 @@ import (
 	"net/netip"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
 
 type API struct {
-	Logger  *slog.Logger
-	DB      *pgxpool.Pool
-	Queries *sqlc.Queries
+	Logger       *slog.Logger
+	DB           *pgxpool.Pool
+	Queries      *sqlc.Queries
+	authEnabled  bool
+	authIssuer   string
+	authAudience string
+	jwks         keyfunc.Keyfunc
 }
 
-func NewAPI(logger *slog.Logger, db *pgxpool.Pool, queries *sqlc.Queries) *API {
-	return &API{
+func NewAPI(logger *slog.Logger, db *pgxpool.Pool, queries *sqlc.Queries, authCfg AuthConfig) *API {
+	a := &API{
 		Logger:  logger,
 		DB:      db,
 		Queries: queries,
 	}
+	a.initAuth(authCfg)
+	return a
 }
 
 func (a *API) Router() http.Handler {
@@ -45,7 +52,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}/ips/{uuid}", a.handleDeleteIPByUUIDandSubnetID)
 
-	return mux
+	return a.authMiddleware(mux)
 }
 
 func (a *API) subnetExists(ctx context.Context, id int64) (bool, netip.Prefix, error) {

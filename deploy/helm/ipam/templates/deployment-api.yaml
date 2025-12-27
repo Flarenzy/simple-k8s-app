@@ -52,6 +52,12 @@ spec:
               {{- end }}
             - name: PORT
               value: {{ .Values.api.env.PORT | quote }}
+            - name: AUTH_ENABLED
+              value: {{ ternary "true" "false" .Values.api.auth.enabled | quote }}
+            - name: KEYCLOAK_ISSUER
+              value: {{ .Values.api.auth.issuer | quote }}
+            - name: KEYCLOAK_AUDIENCE
+              value: {{ .Values.api.auth.audience | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port }}

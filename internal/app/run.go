@@ -19,6 +19,9 @@ type Config struct {
 	DSN          string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	AuthEnabled  bool
+	Issuer       string
+	Audience     string
 }
 
 func LoadConfig() Config {
@@ -27,6 +30,9 @@ func LoadConfig() Config {
 		Port:         os.Getenv("PORT"),
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
+		AuthEnabled:  os.Getenv("AUTH_ENABLED") == "true",
+		Issuer:       os.Getenv("KEYCLOAK_ISSUER"),
+		Audience:     os.Getenv("KEYCLOAK_AUDIENCE"),
 	}
 
 	if cfg.DSN == "" {
@@ -41,10 +47,6 @@ func LoadConfig() Config {
 func Run(ctx context.Context, cfg Config) error {
 
 	logger := slog.Default()
-	dsn := os.Getenv("DB_CONN")
-	if dsn == "" {
-		dsn = "postgres://ipam:ipam@host:5432/ipam?sslmode=disable"
-	}
 	pool, err := appdb.NewPool(ctx, cfg.DSN)
 	if err != nil {
 		return err
@@ -53,7 +55,11 @@ func Run(ctx context.Context, cfg Config) error {
 
 	queries := sqlcdb.New(pool)
 
-	api := apihttp.NewAPI(logger, pool, queries)
+	api := apihttp.NewAPI(logger, pool, queries, apihttp.AuthConfig{
+		Enabled:  cfg.AuthEnabled,
+		Issuer:   cfg.Issuer,
+		Audience: cfg.Audience,
+	})
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
