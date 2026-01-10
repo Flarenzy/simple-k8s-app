@@ -1,0 +1,43 @@
+keycloak:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: keycloak/keycloak
+    tag: "24.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  admin:
+    username: admin
+    password: changeme
+  db:
+    host: "ipam-postgres-postgresql"
+    port: 5432
+    database: ipam
+    user: ipam
+    existingSecret: keycloak-db
+    passwordKey: password
+  proxy:
+    mode: edge
+  http:
+    enabled: true
+  hostname:
+    strict: false
+    url: "keycloak.local"
+  realmImport:
+    enabled: true
+    configMapName: ipam-realm
+    mountPath: /opt/keycloak/data/import
+  ingress:
+    enabled: true
+    className: nginx
+    annotations: {}
+    host: "keycloak.local"
+    path: /
+    pathType: Prefix
+fe:
+  env:
+    VITE_KEYCLOAK_URL: "http://keycloak.local"
+    VITE_KEYCLOAK_REALM: "ipam"
+    VITE_KEYCLOAK_CLIENT_ID: "ipam-fe"

@@ -73,6 +73,7 @@ Create the name of the service account to use
 
 {{- define "ipam.apiFullname" -}}{{ include "ipam.fullname" . }}-api{{- end -}}
 {{- define "ipam.feFullname" -}}{{ include "ipam.fullname" . }}-fe{{- end -}}
+{{- define "ipam.keycloakFullname" -}}{{ include "ipam.fullname" . }}-keycloak{{- end -}}
 
 {{- define "ipam.dbSecretName" -}}
 {{- if .Values.db.existingSecret }}
@@ -90,4 +91,14 @@ app.kubernetes.io/component: api
 {{- define "ipam.feSelectorLabels" -}}
 {{ include "ipam.selectorLabels" . }}
 app.kubernetes.io/component: fe
+{{- end -}}
+
+{{- define "ipam.keycloakLabels" -}}
+{{ include "ipam.labels" . }}
+app.kubernetes.io/component: keycloak
+{{- end -}}
+
+{{- define "ipam.keycloakSelectorLabels" -}}
+{{ include "ipam.selectorLabels" . }}
+app.kubernetes.io/component: keycloak
 {{- end -}}

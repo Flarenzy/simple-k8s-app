@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { getEnv } from "./env";
 import keycloak from "./keycloak";
 
 type View = "home" | "subnet";
@@ -20,7 +21,7 @@ type IPAddress = {
 	updated_at: string;
 };
 
-const API_BASE = "/api/v1";
+const API_BASE = getEnv("VITE_API_BASE", "/api/v1");
 
 export default function App() {
 	const [view, setView] = useState<View>("home");

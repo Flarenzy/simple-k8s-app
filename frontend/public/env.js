@@ -1,0 +1,6 @@
+window.__ENV__ = {
+	VITE_KEYCLOAK_URL: "",
+	VITE_KEYCLOAK_REALM: "",
+	VITE_KEYCLOAK_CLIENT_ID: "",
+	VITE_API_BASE: "",
+};

@@ -42,18 +42,22 @@ Notes:
 
 ## Optional: Keycloak
 
-- The chart can deploy Bitnami Keycloak as a dependency. Enable it and set admin creds:
+- The chart can deploy Keycloak using the official `keycloak/keycloak` image. Create a realm configmap first if you want to auto-import:
+  ```bash
+  kubectl -n ipam create configmap ipam-realm --from-file=ipam-realm.json=dev/ipam-realm.json
+  ```
+- Example deploy with Keycloak enabled (adjust DB secret and host as needed):
   ```bash
   helm upgrade --install ipam deploy/helm/ipam -n ipam \
     --set db.existingSecret=ipam-db \
     --set ingress.enabled=true \
     --set ingress.className=nginx \
     --set keycloak.enabled=true \
-    --set keycloak.auth.adminUser=admin \
-    --set keycloak.auth.adminPassword=changeme \
-    --set keycloak.ingress.hostname=keycloak.local
+    --set keycloak.db.existingSecret=keycloak-db \
+    --set keycloak.realmImport.enabled=true \
+    --set keycloak.realmImport.configMapName=ipam-realm
   ```
-  Add `keycloak.local` to `/etc/hosts` pointing to the minikube IP (or leave it empty to use the IP directly).
+  Add a host entry if you set `keycloak.ingress.host`; if left empty it will use the ingress IP.
 - API auth toggle/env:
-  - Helm values: `api.auth.enabled`, `api.auth.issuer`, `api.auth.audience`. When enabled, the API requires a Bearer token (skips `/healthz` and `/readyz` and Swagger). Issuer should be the realm URL, audience the client ID.
-  - Frontend is not yet wired to Keycloak; once ready, configure Keycloak JS/redirects and pass tokens to the API.
+  - Helm values: `api.auth.enabled`, `api.auth.issuer`, `api.auth.audience`. When enabled, the API requires a Bearer token (skips `/healthz`, `/readyz`, and Swagger). Issuer should be the realm URL, audience the client ID.
+  - Frontend is wired to Keycloak via `frontend/src/keycloak.ts` and uses Bearer tokens for API calls. Runtime config uses `env.js`, set via Helm `fe.env` (e.g. `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`).

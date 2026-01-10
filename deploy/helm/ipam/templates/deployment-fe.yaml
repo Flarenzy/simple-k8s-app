@@ -40,6 +40,13 @@ spec:
           {{- end }}
           image: "{{ .Values.fe.image.repository }}:{{ .Values.fe.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.fe.image.pullPolicy }}
+          {{- with .Values.fe.env }}
+          env:
+            {{- range $key, $value := . }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.fe.service.port }}
