@@ -6,8 +6,8 @@ ARG TARGETARCH=amd64
 
 RUN apk add --no-cache ca-certificates git
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -o /out/goose github.com/pressly/goose/v3/cmd/goose@latest
+RUN GOBIN=/out CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go install github.com/pressly/goose/v3/cmd/goose@latest
 
 FROM alpine:3.23 AS runner
 
