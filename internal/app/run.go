@@ -22,6 +22,7 @@ type Config struct {
 	AuthEnabled  bool
 	Issuer       string
 	Audience     string
+	JWKSURL      string
 }
 
 func LoadConfig() Config {
@@ -33,6 +34,7 @@ func LoadConfig() Config {
 		AuthEnabled:  os.Getenv("AUTH_ENABLED") == "true",
 		Issuer:       os.Getenv("KEYCLOAK_ISSUER"),
 		Audience:     os.Getenv("KEYCLOAK_AUDIENCE"),
+		JWKSURL:      os.Getenv("KEYCLOAK_JWKS_URL"),
 	}
 
 	if cfg.DSN == "" {
@@ -59,6 +61,7 @@ func Run(ctx context.Context, cfg Config) error {
 		Enabled:  cfg.AuthEnabled,
 		Issuer:   cfg.Issuer,
 		Audience: cfg.Audience,
+		JWKSURL:  cfg.JWKSURL,
 	})
 
 	server := &http.Server{

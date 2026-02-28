@@ -17,10 +17,13 @@ api:
   auth:
     # Enable only when your IdP issues access tokens for the API audience below.
     enabled: false
-    # Exact realm issuer URL, for example http://keycloak.local/realms/ipam
+    # Exact realm issuer URL, for example https://keycloak.local/realms/ipam
     issuer: ""
     # Expected access token audience, for example ipam-api
     audience: ""
+    # Optional JWKS URL for in-cluster key fetches. Use this when the public
+    # issuer host is not resolvable from inside the cluster.
+    jwksURL: ""
   livenessProbe:
     httpGet:
       path: /healthz

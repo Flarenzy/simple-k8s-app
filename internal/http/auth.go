@@ -14,6 +14,7 @@ type AuthConfig struct {
 	Enabled  bool
 	Issuer   string
 	Audience string
+	JWKSURL  string
 }
 
 func (a *API) initAuth(cfg AuthConfig) {
@@ -25,7 +26,10 @@ func (a *API) initAuth(cfg AuthConfig) {
 		return
 	}
 
-	jwksURL := cfg.Issuer + "/protocol/openid-connect/certs"
+	jwksURL := cfg.JWKSURL
+	if jwksURL == "" {
+		jwksURL = cfg.Issuer + "/protocol/openid-connect/certs"
+	}
 	kf, err := keyfunc.NewDefaultCtx(context.Background(), []string{jwksURL})
 	if err != nil {
 		a.Logger.Error("failed to fetch JWKS", "url", jwksURL, "err", err)
@@ -36,7 +40,7 @@ func (a *API) initAuth(cfg AuthConfig) {
 	a.authIssuer = cfg.Issuer
 	a.authAudience = cfg.Audience
 	a.jwks = kf
-	a.Logger.Info("auth enabled", "issuer", cfg.Issuer, "audience", cfg.Audience)
+	a.Logger.Info("auth enabled", "issuer", cfg.Issuer, "audience", cfg.Audience, "jwks_url", jwksURL)
 }
 
 func (a *API) authMiddleware(next http.Handler) http.Handler {

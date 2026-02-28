@@ -58,6 +58,8 @@ spec:
               value: {{ .Values.api.auth.issuer | quote }}
             - name: KEYCLOAK_AUDIENCE
               value: {{ .Values.api.auth.audience | quote }}
+            - name: KEYCLOAK_JWKS_URL
+              value: {{ .Values.api.auth.jwksURL | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port }}

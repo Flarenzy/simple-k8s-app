@@ -27,6 +27,7 @@ api:
     enabled: true
     issuer: "https://keycloak.local/realms/ipam"
     audience: "ipam-api"
+    jwksURL: "http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs"
 
 keycloak:
   enabled: true

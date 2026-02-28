@@ -87,6 +87,7 @@ Notes:
      --set api.auth.enabled=true \
      --set api.auth.issuer=https://keycloak.local/realms/ipam \
      --set api.auth.audience=ipam-api \
+     --set api.auth.jwksURL=http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs \
      --set keycloak.enabled=true \
      --set keycloak.db.existingSecret=keycloak-db \
      --set keycloak.hostname.url=https://keycloak.local \
@@ -107,4 +108,5 @@ Notes:
   - `api.auth.enabled`, `api.auth.issuer`, and `api.auth.audience` must all be set together. When enabled, the API requires a Bearer token for application routes and still skips `/healthz`, `/readyz`, and Swagger.
   - `api.auth.issuer` must match the exact realm issuer URL, for example `https://keycloak.local/realms/ipam`.
   - `api.auth.audience` should match the API audience expected in the token, for example `ipam-api`.
+  - `api.auth.jwksURL` should point to the in-cluster Keycloak service when the public issuer host is only resolvable on your workstation, for example `http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs`.
   - The frontend reads its Keycloak runtime config from `env.js`, via Helm `fe.env` (`VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`).
