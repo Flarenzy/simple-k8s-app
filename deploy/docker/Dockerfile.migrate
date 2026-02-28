@@ -1,14 +1,22 @@
-FROM golang:1.25-alpine AS runner
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 RUN apk add --no-cache ca-certificates git
 
-# Install goose
-RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -o /out/goose github.com/pressly/goose/v3/cmd/goose@latest
 
-# Copy migrations
+FROM alpine:3.23 AS runner
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /out/goose /usr/local/bin/goose
 COPY db/migrations /migrations
 
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["/go/bin/goose -dir /migrations postgres \"$DB_CONN\" up"]
+CMD ["/usr/local/bin/goose -dir /migrations postgres \"$DB_CONN\" up"]
