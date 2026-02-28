@@ -36,6 +36,7 @@ func (a *API) initAuth(cfg AuthConfig) {
 	a.authIssuer = cfg.Issuer
 	a.authAudience = cfg.Audience
 	a.jwks = kf
+	a.Logger.Info("auth enabled", "issuer", cfg.Issuer, "audience", cfg.Audience)
 }
 
 func (a *API) authMiddleware(next http.Handler) http.Handler {
