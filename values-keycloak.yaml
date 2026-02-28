@@ -1,3 +1,26 @@
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: "ipam.local"
+      paths:
+        - path: /api
+          pathType: Prefix
+          service:
+            name: api
+            port: 4040
+        - path: /
+          pathType: Prefix
+          service:
+            name: fe
+            port: 80
+
+api:
+  auth:
+    enabled: true
+    issuer: "http://keycloak.local/realms/ipam"
+    audience: "ipam-api"
+
 keycloak:
   enabled: true
   replicaCount: 1
@@ -24,7 +47,7 @@ keycloak:
     enabled: true
   hostname:
     strict: false
-    url: "keycloak.local"
+    url: "http://keycloak.local"
   realmImport:
     enabled: true
     configMapName: ipam-realm
@@ -41,3 +64,4 @@ fe:
     VITE_KEYCLOAK_URL: "http://keycloak.local"
     VITE_KEYCLOAK_REALM: "ipam"
     VITE_KEYCLOAK_CLIENT_ID: "ipam-fe"
+    VITE_API_BASE: "/api/v1"

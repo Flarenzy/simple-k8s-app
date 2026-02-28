@@ -15,8 +15,11 @@ api:
     type: ClusterIP
     port: 4040
   auth:
+    # Enable only when your IdP issues access tokens for the API audience below.
     enabled: false
+    # Exact realm issuer URL, for example http://keycloak.local/realms/ipam
     issuer: ""
+    # Expected access token audience, for example ipam-api
     audience: ""
   livenessProbe:
     httpGet:
@@ -43,6 +46,8 @@ fe:
     type: ClusterIP
     port: 80
   env:
+    # Leave these empty to run the frontend without Keycloak. When set, use the
+    # external Keycloak URL and matching realm/client for browser login.
     VITE_KEYCLOAK_URL: ""
     VITE_KEYCLOAK_REALM: ""
     VITE_KEYCLOAK_CLIENT_ID: ""
@@ -140,6 +145,7 @@ keycloak:
     enabled: true
   hostname:
     strict: false
+    # External Keycloak base URL, for example http://keycloak.local
     url: ""
   realmImport:
     enabled: false
@@ -150,6 +156,8 @@ keycloak:
     enabled: false
     className: ""
     annotations: {}
+    # Set an explicit hostname when exposing Keycloak. Do not leave this empty if
+    # the main app ingress is also enabled, otherwise hostless / paths can clash.
     host: ""
     path: /
     pathType: Prefix
@@ -163,6 +171,8 @@ ingress:
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
+    # Set an explicit hostname (for example ipam.local) when using Keycloak so the
+    # app and Keycloak each have a stable external URL.
     - host: ""
       paths:
         - path: /api
