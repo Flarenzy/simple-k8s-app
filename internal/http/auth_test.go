@@ -29,6 +29,10 @@ func (s staticKeyfunc) Storage() jwkset.Storage {
 	return nil
 }
 
+func (s staticKeyfunc) VerificationKeySet(_ context.Context) (jwt.VerificationKeySet, error) {
+	return jwt.VerificationKeySet{}, nil
+}
+
 func newTestAPI() *API {
 	return &API{
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),

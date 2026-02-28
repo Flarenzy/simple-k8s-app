@@ -1,7 +1,9 @@
-FROM golang:1.25.5-alpine3.23 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.0-alpine3.23 AS builder
 
 WORKDIR /opt/app
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
 RUN go mod download
