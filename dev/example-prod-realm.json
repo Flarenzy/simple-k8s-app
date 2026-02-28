@@ -13,8 +13,8 @@
       "publicClient": true,
       "directAccessGrantsEnabled": false,
       "standardFlowEnabled": true,
-      "redirectUris": ["http://ipam.local/*"],
-      "webOrigins": ["http://ipam.local"],
+      "redirectUris": ["https://ipam.local/*"],
+      "webOrigins": ["https://ipam.local"],
       "protocolMappers": [
         {
           "name": "aud-ipam-api",

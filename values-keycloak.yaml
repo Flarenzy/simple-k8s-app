@@ -1,6 +1,13 @@
+db:
+  existingSecret: ipam-db
+
 ingress:
   enabled: true
   className: nginx
+  tls:
+    - secretName: ipam-local-tls
+      hosts:
+        - "ipam.local"
   hosts:
     - host: "ipam.local"
       paths:
@@ -18,7 +25,7 @@ ingress:
 api:
   auth:
     enabled: true
-    issuer: "http://keycloak.local/realms/ipam"
+    issuer: "https://keycloak.local/realms/ipam"
     audience: "ipam-api"
 
 keycloak:
@@ -42,12 +49,12 @@ keycloak:
     existingSecret: keycloak-db
     passwordKey: password
   proxy:
-    mode: edge
+    headers: xforwarded
   http:
     enabled: true
   hostname:
     strict: false
-    url: "http://keycloak.local"
+    url: "https://keycloak.local"
   realmImport:
     enabled: true
     configMapName: ipam-realm
@@ -56,12 +63,16 @@ keycloak:
     enabled: true
     className: nginx
     annotations: {}
+    tls:
+      - secretName: keycloak-local-tls
+        hosts:
+          - "keycloak.local"
     host: "keycloak.local"
     path: /
     pathType: Prefix
 fe:
   env:
-    VITE_KEYCLOAK_URL: "http://keycloak.local"
+    VITE_KEYCLOAK_URL: "https://keycloak.local"
     VITE_KEYCLOAK_REALM: "ipam"
     VITE_KEYCLOAK_CLIENT_ID: "ipam-fe"
     VITE_API_BASE: "/api/v1"

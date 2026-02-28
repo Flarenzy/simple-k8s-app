@@ -140,12 +140,14 @@ keycloak:
     existingSecret: ""
     passwordKey: password
   proxy:
-    mode: edge
+    # For ingress-nginx, use forwarded headers so Keycloak can reconstruct
+    # the external request scheme/host correctly.
+    headers: xforwarded
   http:
     enabled: true
   hostname:
     strict: false
-    # External Keycloak base URL, for example http://keycloak.local
+    # Full external Keycloak URL passed to KC_HOSTNAME_URL, for example http://keycloak.local
     url: ""
   realmImport:
     enabled: false

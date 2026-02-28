@@ -50,6 +50,7 @@ Notes:
 - The supported Minikube + Keycloak topology uses two explicit hosts:
   - `ipam.local` for the frontend and API
   - `keycloak.local` for the Keycloak ingress
+- For current Keycloak releases, the recommended local setup is HTTPS on both ingresses. Use local TLS secrets (for example via `mkcert`) and keep `keycloak.proxy.headers=xforwarded` so Keycloak trusts the forwarded host/scheme headers from ingress-nginx.
 - Do not leave `keycloak.ingress.host` empty when the main app ingress is also enabled. A hostless `/` Keycloak ingress can conflict with the hostless app ingress.
 - Create a Keycloak DB secret first. This secret must contain the DB password under the key used by `keycloak.db.passwordKey` (defaults to `password`):
   ```bash
@@ -60,6 +61,16 @@ Notes:
   ```bash
   kubectl -n ipam create configmap ipam-realm --from-file=ipam-realm.json=dev/example-prod-realm.json
   ```
+- Create TLS secrets for both ingresses before deploying:
+  ```bash
+  kubectl -n ipam create secret tls ipam-local-tls \
+    --cert=./ipam.local+1.pem \
+    --key=./ipam.local+1-key.pem
+
+  kubectl -n ipam create secret tls keycloak-local-tls \
+    --cert=./ipam.local+1.pem \
+    --key=./ipam.local+1-key.pem
+  ```
 - Keep `dev/ipam-realm.json` for local development with `make run` or the compose-based Keycloak stack. It is intentionally scoped to localhost-style origins.
 - Example deploy with Keycloak enabled:
   ```bash
@@ -68,17 +79,21 @@ Notes:
      --set ingress.enabled=true \
      --set ingress.className=nginx \
      --set ingress.hosts[0].host=ipam.local \
-     --set fe.env.VITE_KEYCLOAK_URL=http://keycloak.local \
+     --set ingress.tls[0].secretName=ipam-local-tls \
+     --set ingress.tls[0].hosts[0]=ipam.local \
+     --set fe.env.VITE_KEYCLOAK_URL=https://keycloak.local \
      --set fe.env.VITE_KEYCLOAK_REALM=ipam \
      --set fe.env.VITE_KEYCLOAK_CLIENT_ID=ipam-fe \
      --set api.auth.enabled=true \
-     --set api.auth.issuer=http://keycloak.local/realms/ipam \
+     --set api.auth.issuer=https://keycloak.local/realms/ipam \
      --set api.auth.audience=ipam-api \
      --set keycloak.enabled=true \
      --set keycloak.db.existingSecret=keycloak-db \
-     --set keycloak.hostname.url=http://keycloak.local \
+     --set keycloak.hostname.url=https://keycloak.local \
      --set keycloak.ingress.enabled=true \
      --set keycloak.ingress.className=nginx \
+     --set keycloak.ingress.tls[0].secretName=keycloak-local-tls \
+     --set keycloak.ingress.tls[0].hosts[0]=keycloak.local \
      --set keycloak.ingress.host=keycloak.local \
      --set keycloak.realmImport.enabled=true \
      --set keycloak.realmImport.configMapName=ipam-realm
@@ -87,9 +102,9 @@ Notes:
   ```text
   <minikube-ip> ipam.local keycloak.local
   ```
-- Open `http://ipam.local/` to start the browser login flow. Keycloak should be reachable at `http://keycloak.local/`.
+- Open `https://ipam.local/` to start the browser login flow. Keycloak should be reachable at `https://keycloak.local/`.
 - API auth toggle/env:
   - `api.auth.enabled`, `api.auth.issuer`, and `api.auth.audience` must all be set together. When enabled, the API requires a Bearer token for application routes and still skips `/healthz`, `/readyz`, and Swagger.
-  - `api.auth.issuer` must match the exact realm issuer URL, for example `http://keycloak.local/realms/ipam`.
+  - `api.auth.issuer` must match the exact realm issuer URL, for example `https://keycloak.local/realms/ipam`.
   - `api.auth.audience` should match the API audience expected in the token, for example `ipam-api`.
   - The frontend reads its Keycloak runtime config from `env.js`, via Helm `fe.env` (`VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`).

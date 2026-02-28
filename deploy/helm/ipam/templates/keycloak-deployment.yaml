@@ -59,14 +59,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.keycloak.db.existingSecret | default (include "ipam.dbSecretName" .) }}
                   key: {{ .Values.keycloak.db.passwordKey | default "password" }}
-            - name: KC_PROXY
-              value: {{ .Values.keycloak.proxy.mode | quote }}
+            {{- if .Values.keycloak.proxy.headers }}
+            - name: KC_PROXY_HEADERS
+              value: {{ .Values.keycloak.proxy.headers | quote }}
+            {{- end }}
             - name: KC_HTTP_ENABLED
               value: {{ ternary "true" "false" .Values.keycloak.http.enabled | quote }}
             - name: KC_HOSTNAME_STRICT
               value: {{ ternary "true" "false" .Values.keycloak.hostname.strict | quote }}
             {{- if .Values.keycloak.hostname.url }}
-            - name: KC_HOSTNAME
+            - name: KC_HOSTNAME_URL
               value: {{ .Values.keycloak.hostname.url | quote }}
             {{- end }}
           ports:
