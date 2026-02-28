@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getEnv } from "./env";
-import keycloak from "./keycloak";
+import keycloak, { keycloakEnabled } from "./keycloak";
 
 type View = "home" | "subnet";
 
@@ -36,7 +36,6 @@ export default function App() {
 	const [savingIp, setSavingIp] = useState<string | null>(null);
 	const [ipSaveError, setIpSaveError] = useState<string | null>(null);
 	const [ipDeleteError, setIpDeleteError] = useState<string | null>(null);
-	const [deletingIp, setDeletingIp] = useState<string | null>(null);
 	const [deletingSubnetId, setDeletingSubnetId] = useState<number | null>(null);
 	const [deleteSubnetError, setDeleteSubnetError] = useState<string | null>(null);
 	const [showCreate, setShowCreate] = useState(false);
@@ -46,21 +45,29 @@ export default function App() {
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [authReady, setAuthReady] = useState(false);
 	const [authError, setAuthError] = useState<string | null>(null);
-	const [token, setToken] = useState<string | null>(null);
 
-	const isAdmin = useMemo(() => view === "home", [view]);
+	const authClient = keycloak;
+
+	const handleLogout = () => {
+		if (!authClient) {
+			return;
+		}
+		void authClient.logout();
+	};
 
 	const ensureToken = async () => {
-		if (keycloak.isTokenExpired(30)) {
+		if (!keycloakEnabled || !authClient) {
+			return null;
+		}
+		if (authClient.isTokenExpired(30)) {
 			try {
-				await keycloak.updateToken(30);
-				setToken(keycloak.token ?? null);
+				await authClient.updateToken(30);
 			} catch (err) {
 				setAuthError("session expired");
 				return null;
 			}
 		}
-		return keycloak.token;
+		return authClient.token;
 	};
 
 	const fetchWithAuth = async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -72,13 +79,19 @@ export default function App() {
 		return fetch(input, { ...init, headers });
 	};
 
+	const getRequestError = async (resp: Response) => {
+		const text = await resp.text();
+		return text || `request failed: ${resp.status}`;
+	};
+
 	const fetchSubnets = async () => {
 		setLoading(true);
 		setLoadError(null);
 		try {
 			const resp = await fetchWithAuth(`${API_BASE}/subnets`);
 			if (!resp.ok) {
-				throw new Error(`request failed: ${resp.status}`);
+				setLoadError(await getRequestError(resp));
+				return;
 			}
 			const data: Subnet[] = await resp.json();
 			setSubnets(data);
@@ -90,31 +103,17 @@ export default function App() {
 		}
 	};
 
-	const reset = () => {
-		setView("home");
-		setSubnets([]);
-		setLoadError(null);
-		setSelectedSubnet(null);
-		setIps([]);
-		setIpsError(null);
-		setIpsLoading(false);
-		setHostnameDrafts({});
-		setSavingIp(null);
-		setIpSaveError(null);
-		setIpDeleteError(null);
-		setDeletingIp(null);
-		setDeletingSubnetId(null);
-		setDeleteSubnetError(null);
-		setShowCreate(false);
-		setNewCidr("");
-		setNewDesc("");
-		setSaving(false);
-		setSaveError(null);
-	};
-
-useEffect(() => {
+	useEffect(() => {
 		let cancelled = false;
-		keycloak
+		if (!keycloakEnabled || !authClient) {
+			setAuthReady(true);
+			void fetchSubnets();
+			return () => {
+				cancelled = true;
+			};
+		}
+
+		authClient
 			.init({ onLoad: "login-required", checkLoginIframe: false })
 			.then((authenticated) => {
 				if (cancelled) return;
@@ -122,16 +121,13 @@ useEffect(() => {
 					setAuthError("not authenticated");
 					return;
 				}
-				setToken(keycloak.token ?? null);
-				keycloak.onTokenExpired = () => {
-					keycloak.updateToken(30).then((refreshed) => {
-						if (refreshed) {
-							setToken(keycloak.token ?? null);
-						}
+				authClient.onTokenExpired = () => {
+					void authClient.updateToken(30).catch(() => {
+						setAuthError("session expired");
 					});
 				};
 				setAuthReady(true);
-				fetchSubnets();
+				void fetchSubnets();
 			})
 			.catch((err) => {
 				if (cancelled) return;
@@ -153,7 +149,8 @@ useEffect(() => {
 			try {
 				const resp = await fetchWithAuth(`${API_BASE}/subnets/${selectedSubnet.id}/ips`);
 				if (!resp.ok) {
-					throw new Error(`request failed: ${resp.status}`);
+					setIpsError(await getRequestError(resp));
+					return;
 				}
 				const data: IPAddress[] = await resp.json();
 				setIps(data);
@@ -213,8 +210,8 @@ useEffect(() => {
 				body: JSON.stringify({ cidr: newCidr.trim(), description: newDesc.trim() }),
 			});
 			if (!resp.ok) {
-				const text = await resp.text();
-				throw new Error(text || `request failed: ${resp.status}`);
+				setSaveError(await getRequestError(resp));
+				return;
 			}
 			const created: Subnet = await resp.json();
 			setSubnets((prev) => [created, ...prev]);
@@ -240,13 +237,12 @@ useEffect(() => {
 
 	const performDeleteIp = async (ipAddress: string, id: string) => {
 		if (!selectedSubnet) return;
-		setDeletingIp(ipAddress);
 		setIpDeleteError(null);
 		try {
 			const resp = await fetchWithAuth(`${API_BASE}/subnets/${selectedSubnet.id}/ips/${id}`, { method: "DELETE" });
 			if (!resp.ok) {
-				const text = await resp.text();
-				throw new Error(text || `request failed: ${resp.status}`);
+				setIpDeleteError(await getRequestError(resp));
+				return;
 			}
 			setIps((prev) => prev.filter((ip) => ip.ip !== ipAddress));
 			setHostnameDrafts((prev) => {
@@ -257,8 +253,6 @@ useEffect(() => {
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "unknown error";
 			setIpDeleteError(message);
-		} finally {
-			setDeletingIp(null);
 		}
 	};
 
@@ -292,8 +286,8 @@ useEffect(() => {
 				body: JSON.stringify(body),
 			});
 			if (!resp.ok) {
-				const text = await resp.text();
-				throw new Error(text || `request failed: ${resp.status}`);
+				setIpSaveError(await getRequestError(resp));
+				return;
 			}
 			const saved: IPAddress = await resp.json();
 			setIps((prev) => {
@@ -314,8 +308,8 @@ useEffect(() => {
 		try {
 			const resp = await fetchWithAuth(`${API_BASE}/subnets/${subnet.id}`, { method: "DELETE" });
 			if (!resp.ok) {
-				const text = await resp.text();
-				throw new Error(text || `request failed: ${resp.status}`);
+				setDeleteSubnetError(await getRequestError(resp));
+				return;
 			}
 			setSubnets((prev) => prev.filter((s) => s.id !== subnet.id));
 			if (selectedSubnet?.id === subnet.id) {
@@ -329,12 +323,6 @@ useEffect(() => {
 		} finally {
 			setDeletingSubnetId(null);
 		}
-	};
-
-	const deleteIp = async (ipAddress: string) => {
-		const record = ipMap.get(ipAddress);
-		if (!record) return;
-		await performDeleteIp(ipAddress, record.id);
 	};
 
 	if (!authReady) {
@@ -353,12 +341,14 @@ useEffect(() => {
 			<div className="page">
 				<header className="header">
 					<div>
-						<div className="eyebrow">Logged in</div>
+						<div className="eyebrow">{keycloakEnabled ? "Logged in" : "Ready"}</div>
 						<div className="title">IPAM</div>
 					</div>
-					<button className="secondary" onClick={() => keycloak.logout()}>
-						Log out
-					</button>
+					{keycloakEnabled && authClient ? (
+						<button className="secondary" onClick={handleLogout}>
+							Log out
+						</button>
+					) : null}
 				</header>
 				<main className="panel">
 					<div className="panel__title-row">
@@ -374,6 +364,7 @@ useEffect(() => {
 
 					{loading ? <div className="muted">Loading...</div> : null}
 					{loadError ? <div className="error">Failed to load: {loadError}</div> : null}
+					{deleteSubnetError ? <div className="error">Delete failed: {deleteSubnetError}</div> : null}
 
 					{!loading && !loadError ? (
 						<table className="table">
@@ -483,9 +474,11 @@ useEffect(() => {
 							← Back
 						</button>
 					</div>
-					<button className="secondary" onClick={() => keycloak.logout()}>
-						Log out
-					</button>
+					{keycloakEnabled && authClient ? (
+						<button className="secondary" onClick={handleLogout}>
+							Log out
+						</button>
+					) : null}
 				</header>
 				<main className="panel">
 					<div className="panel__title-row">
