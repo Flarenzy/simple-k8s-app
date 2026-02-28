@@ -5,11 +5,7 @@
     {
       "clientId": "ipam-api",
       "name": "IPAM API",
-      "publicClient": true,
-      "directAccessGrantsEnabled": false,
-      "standardFlowEnabled": true,
-      "redirectUris": ["https://ipam.yourdomain.com/*"],
-      "webOrigins": ["https://ipam.yourdomain.com"]
+      "bearerOnly": true
     },
     {
       "clientId": "ipam-fe",
@@ -17,8 +13,36 @@
       "publicClient": true,
       "directAccessGrantsEnabled": false,
       "standardFlowEnabled": true,
-      "redirectUris": ["https://ipam.yourdomain.com/*"],
-      "webOrigins": ["https://ipam.yourdomain.com"]
+      "redirectUris": ["http://ipam.local/*"],
+      "webOrigins": ["http://ipam.local"],
+      "protocolMappers": [
+        {
+          "name": "aud-ipam-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "ipam-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "devuser",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

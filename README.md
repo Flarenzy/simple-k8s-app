@@ -56,10 +56,11 @@ Notes:
   kubectl -n ipam create secret generic keycloak-db \
     --from-literal=password="$POSTGRES_PASSWORD"
   ```
-- Create a realm configmap if you want to auto-import a sample realm:
+- Create a realm configmap if you want to auto-import the Helm-oriented sample realm (this file matches `ipam.local` and `keycloak.local`, and includes a demo user `devuser` / `devpassword`):
   ```bash
-  kubectl -n ipam create configmap ipam-realm --from-file=ipam-realm.json=dev/ipam-realm.json
+  kubectl -n ipam create configmap ipam-realm --from-file=ipam-realm.json=dev/example-prod-realm.json
   ```
+- Keep `dev/ipam-realm.json` for local development with `make run` or the compose-based Keycloak stack. It is intentionally scoped to localhost-style origins.
 - Example deploy with Keycloak enabled:
   ```bash
   helm upgrade --install ipam deploy/helm/ipam -n ipam \
