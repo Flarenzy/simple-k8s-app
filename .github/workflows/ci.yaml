@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.26"
   NODE_VERSION: "24"
   REGISTRY: ghcr.io
 
@@ -90,19 +90,3 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ matrix.image }}:latest
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ matrix.image }}:${{ github.sha }}
-
-      - name: Cleanup old images
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_NAME: ${{ matrix.image }}
-          OWNER: ${{ steps.owner.outputs.owner }}
-        run: |
-          # keep latest 3 versions
-          mapfile -t versions < <(gh api -H "Accept: application/vnd.github+json" \
-            "/users/${OWNER}/packages/container/${PACKAGE_NAME}/versions?per_page=100" \
-            | jq -r '.[].id')
-          to_delete=("${versions[@]:3}")
-          for id in "${to_delete[@]}"; do
-            gh api -X DELETE "/users/${OWNER}/packages/container/${PACKAGE_NAME}/versions/${id}"
-          done
