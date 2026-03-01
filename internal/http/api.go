@@ -4,30 +4,26 @@ import (
 	"log/slog"
 	"net/http"
 
+	apiauth "github.com/Flarenzy/simple-k8s-app/internal/auth"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
-	"github.com/MicahParks/keyfunc/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
 
 type API struct {
-	Logger       *slog.Logger
-	DB           *pgxpool.Pool
-	Service      domain.NetworkService
-	authEnabled  bool
-	authIssuer   string
-	authAudience string
-	jwks         keyfunc.Keyfunc
+	Logger        *slog.Logger
+	DB            *pgxpool.Pool
+	Service       domain.NetworkService
+	Authenticator apiauth.Authenticator
 }
 
-func NewAPI(logger *slog.Logger, db *pgxpool.Pool, svc domain.NetworkService, authCfg AuthConfig) *API {
-	a := &API{
-		Logger:  logger,
-		DB:      db,
-		Service: svc,
+func NewAPI(logger *slog.Logger, db *pgxpool.Pool, svc domain.NetworkService, authenticator apiauth.Authenticator) *API {
+	return &API{
+		Logger:        logger,
+		DB:            db,
+		Service:       svc,
+		Authenticator: authenticator,
 	}
-	a.initAuth(authCfg)
-	return a
 }
 
 func (a *API) Router() http.Handler {

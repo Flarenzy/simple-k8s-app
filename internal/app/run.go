@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	apiauth "github.com/Flarenzy/simple-k8s-app/internal/auth"
 	appdb "github.com/Flarenzy/simple-k8s-app/internal/db"
 	sqlcdb "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
@@ -61,13 +62,18 @@ func Run(ctx context.Context, cfg Config) error {
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
 	networkService := domain.NewNetworkService(subnetRepo, ipRepo)
-
-	api := apihttp.NewAPI(logger, pool, networkService, apihttp.AuthConfig{
+	authenticator, err := apiauth.NewKeycloakAuthenticator(apiauth.Config{
 		Enabled:  cfg.AuthEnabled,
 		Issuer:   cfg.Issuer,
 		Audience: cfg.Audience,
 		JWKSURL:  cfg.JWKSURL,
 	})
+	if err != nil {
+		logger.Warn("failed to initialize authenticator; starting without auth", "err", err)
+		authenticator = nil
+	}
+
+	api := apihttp.NewAPI(logger, pool, networkService, authenticator)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
