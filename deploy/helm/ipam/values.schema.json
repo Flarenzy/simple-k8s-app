@@ -1,0 +1,647 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "nonNegativeInt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "freeFormObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "freeFormObjectArray": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "imageConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "serviceConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
+        },
+        "port": {
+          "$ref": "#/definitions/positiveInt"
+        }
+      }
+    },
+    "tlsEntries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "secretName": {
+            "type": "string"
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "probeConfig": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  "properties": {
+    "replicaCount": {
+      "$ref": "#/definitions/positiveInt"
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicaCount": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "image": {
+          "$ref": "#/definitions/imageConfig"
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "issuer": {
+              "type": "string"
+            },
+            "audience": {
+              "type": "string"
+            },
+            "jwksURL": {
+              "type": "string"
+            }
+          }
+        },
+        "livenessProbe": {
+          "$ref": "#/definitions/probeConfig"
+        },
+        "readinessProbe": {
+          "$ref": "#/definitions/probeConfig"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "PORT": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "auth": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": ["enabled"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "auth": {
+                "required": ["issuer", "audience"],
+                "properties": {
+                  "issuer": {
+                    "minLength": 1
+                  },
+                  "audience": {
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicaCount": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "image": {
+          "$ref": "#/definitions/imageConfig"
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "VITE_KEYCLOAK_URL": {
+              "type": "string"
+            },
+            "VITE_KEYCLOAK_REALM": {
+              "type": "string"
+            },
+            "VITE_KEYCLOAK_CLIENT_ID": {
+              "type": "string"
+            },
+            "VITE_API_BASE": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "$ref": "#/definitions/imageConfig"
+        },
+        "dbConn": {
+          "type": "string"
+        }
+      }
+    },
+    "image": {
+      "$ref": "#/definitions/imageConfig"
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/imagePullSecrets"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "automount": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podSecurityContext": {
+      "$ref": "#/definitions/freeFormObject"
+    },
+    "securityContext": {
+      "$ref": "#/definitions/freeFormObject"
+    },
+    "service": {
+      "$ref": "#/definitions/serviceConfig"
+    },
+    "db": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        },
+        "connString": {
+          "type": "string"
+        }
+      }
+    },
+    "keycloak": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "replicaCount": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "image": {
+          "$ref": "#/definitions/imageConfig"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "admin": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          }
+        },
+        "db": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "$ref": "#/definitions/positiveInt"
+            },
+            "database": {
+              "type": "string"
+            },
+            "user": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "passwordKey": {
+              "type": "string"
+            }
+          }
+        },
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "headers": {
+              "type": "string",
+              "enum": ["", "forwarded", "xforwarded"]
+            }
+          }
+        },
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "hostname": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "strict": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "realmImport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "configMapName": {
+              "type": "string"
+            },
+            "mountPath": {
+              "type": "string"
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/freeFormObject"
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "className": {
+              "type": "string"
+            },
+            "annotations": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "host": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pathType": {
+              "type": "string",
+              "enum": ["ImplementationSpecific", "Exact", "Prefix"]
+            },
+            "tls": {
+              "$ref": "#/definitions/tlsEntries"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "realmImport": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": ["enabled"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "realmImport": {
+                "required": ["configMapName"],
+                "properties": {
+                  "configMapName": {
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ingress": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": ["enabled"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "ingress": {
+                "required": ["path", "pathType"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "pathType": {
+                      "type": "string",
+                      "enum": ["ImplementationSpecific", "Exact", "Prefix"]
+                    },
+                    "service": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "port": {
+                          "$ref": "#/definitions/positiveInt"
+                        }
+                      },
+                      "required": ["name", "port"]
+                    }
+                  },
+                  "required": ["path", "pathType", "service"]
+                }
+              }
+            },
+            "required": ["paths"]
+          }
+        },
+        "tls": {
+          "$ref": "#/definitions/tlsEntries"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": ["enabled"]
+          },
+          "then": {
+            "required": ["hosts"],
+            "properties": {
+              "hosts": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "httpRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "parentRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "hostnames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "resources": {
+      "$ref": "#/definitions/freeFormObject"
+    },
+    "livenessProbe": {
+      "$ref": "#/definitions/probeConfig"
+    },
+    "readinessProbe": {
+      "$ref": "#/definitions/probeConfig"
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minReplicas": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "maxReplicas": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "targetCPUUtilizationPercentage": {
+          "$ref": "#/definitions/positiveInt"
+        },
+        "targetMemoryUtilizationPercentage": {
+          "$ref": "#/definitions/positiveInt"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": ["enabled"]
+          },
+          "then": {
+            "required": ["minReplicas", "maxReplicas"]
+          }
+        }
+      ]
+    },
+    "volumes": {
+      "$ref": "#/definitions/freeFormObjectArray"
+    },
+    "volumeMounts": {
+      "$ref": "#/definitions/freeFormObjectArray"
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "tolerations": {
+      "$ref": "#/definitions/freeFormObjectArray"
+    },
+    "affinity": {
+      "$ref": "#/definitions/freeFormObject"
+    }
+  }
+}
