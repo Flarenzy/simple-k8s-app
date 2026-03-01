@@ -26,10 +26,14 @@ func (s *networkService) ListSubnets(ctx context.Context) ([]Subnet, error) {
 }
 
 func (s *networkService) CreateSubnet(ctx context.Context, input CreateSubnetInput) (Subnet, error) {
-	if _, err := netip.ParsePrefix(input.CIDR); err != nil {
+	cidr, err := netip.ParsePrefix(input.CIDR)
+	if err != nil {
 		return Subnet{}, fmt.Errorf("%w: invalid cidr", ErrInvalidInput)
 	}
-	return s.subnets.Create(ctx, input)
+	return s.subnets.Create(ctx, CreateSubnetRecord{
+		CIDR:        cidr,
+		Description: input.Description,
+	})
 }
 
 func (s *networkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {
@@ -75,7 +79,10 @@ func (s *networkService) CreateIP(ctx context.Context, subnetID int64, input Cre
 		return IPAddress{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	return s.ips.Create(ctx, input, subnetID)
+	return s.ips.Create(ctx, CreateIPRecord{
+		IP:       ip,
+		Hostname: input.Hostname,
+	}, subnetID)
 }
 
 func (s *networkService) UpdateIPHostname(ctx context.Context, subnetID int64, id IPAddressID, input UpdateIPInput) (IPAddress, error) {

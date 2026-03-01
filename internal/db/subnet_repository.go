@@ -3,8 +3,6 @@ package db
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/netip"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
@@ -45,14 +43,9 @@ func (r *SubnetRepository) FindByID(ctx context.Context, id int64) (domain.Subne
 	return toDomainSubnet(subnet), nil
 }
 
-func (r *SubnetRepository) Create(ctx context.Context, input domain.CreateSubnetInput) (domain.Subnet, error) {
-	cidr, err := netip.ParsePrefix(input.CIDR)
-	if err != nil {
-		return domain.Subnet{}, fmt.Errorf("%w: invalid cidr", domain.ErrInvalidInput)
-	}
-
+func (r *SubnetRepository) Create(ctx context.Context, input domain.CreateSubnetRecord) (domain.Subnet, error) {
 	subnet, err := r.queries.CreateSubnet(ctx, sqlc.CreateSubnetParams{
-		Cidr:        cidr,
+		Cidr:        input.CIDR,
 		Description: input.Description,
 	})
 	if err != nil {

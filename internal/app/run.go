@@ -61,13 +61,8 @@ func Run(ctx context.Context, cfg Config) error {
 	queries := sqlcdb.New(pool)
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
-	networkService := domain.NewNetworkService(subnetRepo, ipRepo)
-	authenticator, err := apiauth.NewKeycloakAuthenticator(ctx, apiauth.Config{
-		Enabled:  cfg.AuthEnabled,
-		Issuer:   cfg.Issuer,
-		Audience: cfg.Audience,
-		JWKSURL:  cfg.JWKSURL,
-	})
+	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkService(subnetRepo, ipRepo))
+	authenticator, err := newAuthenticator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("initialize authenticator: %w", err)
 	}
@@ -96,4 +91,13 @@ func Run(ctx context.Context, cfg Config) error {
 	defer cancel()
 
 	return server.Shutdown(shutdownCtx)
+}
+
+func newAuthenticator(ctx context.Context, cfg Config) (apiauth.Authenticator, error) {
+	return apiauth.NewKeycloakAuthenticator(ctx, apiauth.Config{
+		Enabled:  cfg.AuthEnabled,
+		Issuer:   cfg.Issuer,
+		Audience: cfg.Audience,
+		JWKSURL:  cfg.JWKSURL,
+	})
 }

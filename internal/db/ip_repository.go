@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/netip"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
@@ -55,14 +54,9 @@ func (r *IPRepository) FindByIDAndSubnet(ctx context.Context, id domain.IPAddres
 	return toDomainIP(ip), nil
 }
 
-func (r *IPRepository) Create(ctx context.Context, input domain.CreateIPInput, subnetID int64) (domain.IPAddress, error) {
-	ipAddr, err := netip.ParseAddr(input.IP)
-	if err != nil {
-		return domain.IPAddress{}, fmt.Errorf("%w: invalid ip", domain.ErrInvalidInput)
-	}
-
+func (r *IPRepository) Create(ctx context.Context, input domain.CreateIPRecord, subnetID int64) (domain.IPAddress, error) {
 	ip, err := r.queries.CreateIPAddress(ctx, sqlc.CreateIPAddressParams{
-		Ip:       ipAddr,
+		Ip:       input.IP,
 		Hostname: input.Hostname,
 		SubnetID: subnetID,
 	})

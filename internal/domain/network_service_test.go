@@ -10,7 +10,7 @@ import (
 type stubSubnetRepository struct {
 	listFn   func(context.Context) ([]Subnet, error)
 	findFn   func(context.Context, int64) (Subnet, error)
-	createFn func(context.Context, CreateSubnetInput) (Subnet, error)
+	createFn func(context.Context, CreateSubnetRecord) (Subnet, error)
 	deleteFn func(context.Context, int64) (bool, error)
 }
 
@@ -28,7 +28,7 @@ func (s stubSubnetRepository) FindByID(ctx context.Context, id int64) (Subnet, e
 	return s.findFn(ctx, id)
 }
 
-func (s stubSubnetRepository) Create(ctx context.Context, input CreateSubnetInput) (Subnet, error) {
+func (s stubSubnetRepository) Create(ctx context.Context, input CreateSubnetRecord) (Subnet, error) {
 	if s.createFn == nil {
 		return Subnet{}, nil
 	}
@@ -45,7 +45,7 @@ func (s stubSubnetRepository) Delete(ctx context.Context, id int64) (bool, error
 type stubIPRepository struct {
 	listFn   func(context.Context, int64) ([]IPAddress, error)
 	findFn   func(context.Context, IPAddressID, int64) (IPAddress, error)
-	createFn func(context.Context, CreateIPInput, int64) (IPAddress, error)
+	createFn func(context.Context, CreateIPRecord, int64) (IPAddress, error)
 	updateFn func(context.Context, IPAddressID, UpdateIPInput) (IPAddress, error)
 	deleteFn func(context.Context, IPAddressID, int64) (bool, error)
 }
@@ -64,7 +64,7 @@ func (s stubIPRepository) FindByIDAndSubnet(ctx context.Context, id IPAddressID,
 	return s.findFn(ctx, id, subnetID)
 }
 
-func (s stubIPRepository) Create(ctx context.Context, input CreateIPInput, subnetID int64) (IPAddress, error) {
+func (s stubIPRepository) Create(ctx context.Context, input CreateIPRecord, subnetID int64) (IPAddress, error) {
 	if s.createFn == nil {
 		return IPAddress{}, nil
 	}
@@ -121,10 +121,9 @@ func TestCreateIPAllowsUsableAddress(t *testing.T) {
 			},
 		},
 		stubIPRepository{
-			createFn: func(_ context.Context, input CreateIPInput, subnetID int64) (IPAddress, error) {
+			createFn: func(_ context.Context, input CreateIPRecord, subnetID int64) (IPAddress, error) {
 				created = true
-				ip, _ := netip.ParseAddr(input.IP)
-				return IPAddress{ID: IPAddressID("ip-1"), IP: ip, SubnetID: subnetID}, nil
+				return IPAddress{ID: IPAddressID("ip-1"), IP: input.IP, SubnetID: subnetID}, nil
 			},
 		},
 	)
@@ -154,5 +153,84 @@ func TestDeleteSubnetReturnsNotFoundWhenRepositoryReportsNoDelete(t *testing.T) 
 	err := svc.DeleteSubnet(context.Background(), 1)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestCreateIPReturnsSubnetSpecificNotFound(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{}, ErrNotFound
+			},
+		},
+		stubIPRepository{},
+	)
+
+	_, err := svc.CreateIP(context.Background(), 1, CreateIPInput{IP: "10.0.0.10"})
+	if !errors.Is(err, ErrSubnetNotFound) {
+		t.Fatalf("expected ErrSubnetNotFound, got %v", err)
+	}
+}
+
+func TestUpdateIPHostnameReturnsIPSpecificNotFound(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{ID: 1}, nil
+			},
+		},
+		stubIPRepository{
+			findFn: func(context.Context, IPAddressID, int64) (IPAddress, error) {
+				return IPAddress{}, ErrNotFound
+			},
+		},
+	)
+
+	_, err := svc.UpdateIPHostname(context.Background(), 1, IPAddressID("ip-1"), UpdateIPInput{Hostname: "host"})
+	if !errors.Is(err, ErrIPNotFound) {
+		t.Fatalf("expected ErrIPNotFound, got %v", err)
+	}
+}
+
+func TestCreateIPRejectsIPv4BroadcastAddress(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				prefix, _ := netip.ParsePrefix("10.0.0.0/24")
+				return Subnet{ID: 1, CIDR: prefix}, nil
+			},
+		},
+		stubIPRepository{},
+	)
+
+	_, err := svc.CreateIP(context.Background(), 1, CreateIPInput{IP: "10.0.0.255"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCreateIPAllowsSlash31EndpointAddress(t *testing.T) {
+	created := false
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				prefix, _ := netip.ParsePrefix("10.0.0.0/31")
+				return Subnet{ID: 1, CIDR: prefix}, nil
+			},
+		},
+		stubIPRepository{
+			createFn: func(_ context.Context, input CreateIPRecord, subnetID int64) (IPAddress, error) {
+				created = true
+				return IPAddress{ID: IPAddressID("ip-2"), IP: input.IP, SubnetID: subnetID}, nil
+			},
+		},
+	)
+
+	_, err := svc.CreateIP(context.Background(), 1, CreateIPInput{IP: "10.0.0.1"})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !created {
+		t.Fatal("expected repository create to be called")
 	}
 }
