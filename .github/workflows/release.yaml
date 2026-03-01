@@ -149,8 +149,8 @@ jobs:
             echo "Failed to find imported GPG key fingerprint" >&2
             exit 1
           fi
-          gpg --batch --export > "$GNUPGHOME/pubring.gpg"
-          gpg --batch --export-secret-keys > "$GNUPGHOME/secring.gpg"
+          gpg --batch --export "$FINGERPRINT" > "$GNUPGHOME/pubring.gpg"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$HELM_GPG_PASSPHRASE" --export-secret-keys "$FINGERPRINT" > "$GNUPGHOME/secring.gpg"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           echo "HELM_GPG_KEY_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
           echo "HELM_GPG_PASSPHRASE_FILE=$RUNNER_TEMP/helm-gpg-passphrase" >> "$GITHUB_ENV"
