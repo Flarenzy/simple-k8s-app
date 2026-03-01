@@ -145,16 +145,22 @@ jobs:
           printf '%s' "$HELM_GPG_PASSPHRASE" > "$RUNNER_TEMP/helm-gpg-passphrase"
           chmod 600 "$RUNNER_TEMP/helm-gpg-passphrase"
           FINGERPRINT="$(gpg --batch --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')"
+          KEY_UID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '$1 == "uid" { print $10; exit }')"
           if [[ -z "$FINGERPRINT" ]]; then
             echo "Failed to find imported GPG key fingerprint" >&2
+            exit 1
+          fi
+          if [[ -z "$KEY_UID" ]]; then
+            echo "Failed to find imported GPG key uid" >&2
             exit 1
           fi
           gpg --batch --export "$FINGERPRINT" > "$GNUPGHOME/pubring.gpg"
           gpg --batch --yes --pinentry-mode loopback --passphrase "$HELM_GPG_PASSPHRASE" --export-secret-keys "$FINGERPRINT" > "$GNUPGHOME/secring.gpg"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           echo "HELM_GPG_KEY_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo "HELM_GPG_KEY_UID=$KEY_UID" >> "$GITHUB_ENV"
           echo "HELM_GPG_PASSPHRASE_FILE=$RUNNER_TEMP/helm-gpg-passphrase" >> "$GITHUB_ENV"
-          echo "HELM_GPG_KEYRING=$GNUPGHOME/secring.gpg" >> "$GITHUB_ENV"
+          echo "HELM_GPG_KEYRING=$GNUPGHOME/pubring.gpg" >> "$GITHUB_ENV"
 
       - name: Stage release chart
         env:
@@ -194,7 +200,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/dist"
           helm package \
             --sign \
-            --key "$HELM_GPG_KEY_FINGERPRINT" \
+            --key "$HELM_GPG_KEY_UID" \
             --keyring "$HELM_GPG_KEYRING" \
             --passphrase-file "$HELM_GPG_PASSPHRASE_FILE" \
             --destination "$RUNNER_TEMP/dist" \
