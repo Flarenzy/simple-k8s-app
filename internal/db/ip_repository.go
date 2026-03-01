@@ -8,7 +8,7 @@ import (
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	"github.com/google/uuid"
-	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 

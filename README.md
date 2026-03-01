@@ -137,3 +137,4 @@ Notes:
   - `api.auth.audience` should match the API audience expected in the token, for example `ipam-api`.
   - `api.auth.jwksURL` should point to the in-cluster Keycloak service when the public issuer host is only resolvable on your workstation, for example `http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs`.
   - The frontend reads its Keycloak runtime config from `env.js`, via Helm `fe.env` (`VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`).
+![img_2.png](img_2.png)![img_3.png](img_3.png)![img_4.png](img_4.png)

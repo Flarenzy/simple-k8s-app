@@ -1,0 +1,51 @@
+{
+  "realm": "ipam-integration",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "ipam-api",
+      "name": "IPAM API",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "ipam-test",
+      "name": "IPAM Integration Tests",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "aud-ipam-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "ipam-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "integration-user",
+      "enabled": true,
+      "firstName": "Integration",
+      "lastName": "User",
+      "email": "integration-user@example.com",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "integration-password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

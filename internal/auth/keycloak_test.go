@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,5 +86,29 @@ func TestKeycloakAuthenticatorReturnsPrincipal(t *testing.T) {
 	}
 	if principal.Subject != "user-1" {
 		t.Fatalf("unexpected subject: %v", principal.Subject)
+	}
+}
+
+func TestNewKeycloakAuthenticatorFailsWhenJWKSUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/certs" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("no jwks"))
+	}))
+	defer server.Close()
+
+	_, err := NewKeycloakAuthenticator(context.Background(), Config{
+		Enabled:  true,
+		Issuer:   "http://keycloak.local/realms/ipam",
+		JWKSURL:  server.URL + "/certs",
+		Audience: "ipam-api",
+	})
+	if err == nil {
+		t.Fatal("expected error when jwks endpoint is unavailable")
+	}
+	if !strings.Contains(err.Error(), "jwks endpoint returned 502") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

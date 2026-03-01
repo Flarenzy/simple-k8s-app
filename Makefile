@@ -11,7 +11,7 @@ LOCAL_KEYCLOAK_ISSUER := $(LOCAL_KEYCLOAK_URL)/realms/$(LOCAL_KEYCLOAK_REALM)
 LOCAL_KEYCLOAK_AUDIENCE := ipam-api
 LOCAL_KEYCLOAK_JWKS_URL := $(LOCAL_KEYCLOAK_ISSUER)/protocol/openid-connect/certs
 
-.PHONY: docs format run run-api
+.PHONY: docs format run run-api test-integration
 
 ## ------------------------------
 ## App commands
@@ -41,6 +41,9 @@ docs:
 
 format:
 	gofmt -w $(GO_FILES)
+
+test-integration:
+	go test -tags=integration ./integration/api/...
 
 docker-api:
 	docker build -f deploy/docker/Dockerfile.api -t $(APP_NAME)-api:latest .

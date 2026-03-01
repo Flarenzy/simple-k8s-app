@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -50,7 +51,23 @@ func LoadConfig() Config {
 }
 
 func Run(ctx context.Context, cfg Config) error {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.Port))
+	if err != nil {
+		return fmt.Errorf("listen on %q: %w", cfg.Port, err)
+	}
+	defer func() {
+		if closeErr := listener.Close(); closeErr != nil {
+			_, printerErr := fmt.Fprintf(os.Stderr, "error closing listener: %v\n", closeErr)
+			if printerErr != nil {
+				return
+			}
+		}
+	}()
 
+	return Serve(ctx, cfg, listener)
+}
+
+func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	logger := slog.Default()
 	pool, err := appdb.NewPool(ctx, cfg.DSN)
 	if err != nil {
@@ -70,27 +87,46 @@ func Run(ctx context.Context, cfg Config) error {
 	api := apihttp.NewAPI(logger, pool, networkService, authenticator)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
+		Addr:         listener.Addr().String(),
 		Handler:      api.Router(),
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
-		fmt.Printf("Serving server on port %s\n", cfg.Port)
-		if err = server.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
-			fmt.Printf("ListenAndServe error: %s\n", err)
+		fmt.Printf("Serving server on %s\n", listener.Addr())
+		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
 		}
+		close(errCh)
 	}()
 
-	<-ctx.Done()
+	select {
+	case serveErr, ok := <-errCh:
+		if ok && serveErr != nil {
+			return serveErr
+		}
+		return nil
+	case <-ctx.Done():
+	}
 
 	fmt.Println("\nShutting down server...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	return server.Shutdown(shutdownCtx)
+	if err = server.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+
+	for serveErr := range errCh {
+		if serveErr != nil {
+			return serveErr
+		}
+	}
+
+	return nil
 }
 
 func newAuthenticator(ctx context.Context, cfg Config) (apiauth.Authenticator, error) {

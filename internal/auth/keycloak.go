@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -28,6 +30,10 @@ func NewKeycloakAuthenticator(ctx context.Context, cfg Config) (Authenticator, e
 		jwksURL = cfg.Issuer + "/protocol/openid-connect/certs"
 	}
 
+	if err := ensureJWKSReachable(ctx, jwksURL); err != nil {
+		return nil, fmt.Errorf("fetch jwks from %s: %w", jwksURL, err)
+	}
+
 	kf, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
 	if err != nil {
 		return nil, fmt.Errorf("fetch jwks from %s: %w", jwksURL, err)
@@ -38,6 +44,34 @@ func NewKeycloakAuthenticator(ctx context.Context, cfg Config) (Authenticator, e
 		audience: cfg.Audience,
 		jwks:     kf,
 	}, nil
+}
+
+func ensureJWKSReachable(ctx context.Context, jwksURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			return
+		}
+		err = resp.Body.Close()
+		if err != nil {
+			return
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("jwks endpoint returned %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 func (a *keycloakAuthenticator) Authenticate(_ context.Context, bearerToken string) (Principal, error) {
