@@ -1,0 +1,224 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "24"
+  REGISTRY: ghcr.io
+  CHART_NAME: ipam
+  CHART_SOURCE_DIR: deploy/helm/ipam
+  CHART_OCI_REPO: charts
+
+jobs:
+  validate-release-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+      owner: ${{ steps.owner.outputs.owner }}
+      chart_ref: ${{ steps.chart.outputs.chart_ref }}
+    steps:
+      - name: Validate semver tag
+        id: tag
+        env:
+          RAW_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RAW_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Only plain semver tags like 1.2.3 are supported. Got: $RAW_TAG" >&2
+            exit 1
+          fi
+          echo "release_tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "owner=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set chart reference
+        id: chart
+        run: echo "chart_ref=oci://${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/${{ env.CHART_OCI_REPO }}/${{ env.CHART_NAME }}" >> "$GITHUB_OUTPUT"
+
+  verify-source:
+    needs: validate-release-tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  release-images:
+    needs:
+      - validate-release-tag
+      - verify-source
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - dockerfile_suffix: api
+            image: ipam-api
+          - dockerfile_suffix: fe
+            image: ipam-fe
+          - dockerfile_suffix: migrate
+            image: ipam-migrate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.${{ matrix.dockerfile_suffix }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ needs.validate-release-tag.outputs.owner }}/${{ matrix.image }}:${{ needs.validate-release-tag.outputs.release_tag }}
+
+  release-chart:
+    needs:
+      - validate-release-tag
+      - verify-source
+      - release-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username "${{ github.actor }}" --password-stdin
+
+      - name: Import Helm signing key
+        env:
+          HELM_GPG_PRIVATE_KEY: ${{ secrets.HELM_GPG_PRIVATE_KEY }}
+          HELM_GPG_PASSPHRASE: ${{ secrets.HELM_GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$HELM_GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s' "$HELM_GPG_PASSPHRASE" > "$RUNNER_TEMP/helm-gpg-passphrase"
+          chmod 600 "$RUNNER_TEMP/helm-gpg-passphrase"
+          FINGERPRINT="$(gpg --batch --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')"
+          if [[ -z "$FINGERPRINT" ]]; then
+            echo "Failed to find imported GPG key fingerprint" >&2
+            exit 1
+          fi
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "HELM_GPG_KEY_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo "HELM_GPG_PASSPHRASE_FILE=$RUNNER_TEMP/helm-gpg-passphrase" >> "$GITHUB_ENV"
+
+      - name: Stage release chart
+        env:
+          RELEASE_TAG: ${{ needs.validate-release-tag.outputs.release_tag }}
+        run: |
+          STAGE_DIR="$RUNNER_TEMP/chart/${{ env.CHART_NAME }}"
+          mkdir -p "$(dirname "$STAGE_DIR")"
+          cp -R "${{ env.CHART_SOURCE_DIR }}" "$STAGE_DIR"
+
+          perl -0pi -e 's/^version: .+$/version: '"$RELEASE_TAG"'/m; s/^appVersion: .+$/appVersion: "'"$RELEASE_TAG"'"/m' "$STAGE_DIR/Chart.yaml"
+          perl -0pi -e 's#(repository: ghcr\.io/flarenzy/ipam-api\s+tag: )\S+#${1}'"$RELEASE_TAG"'#m; s#(repository: ghcr\.io/flarenzy/ipam-fe\s+tag: )\S+#${1}'"$RELEASE_TAG"'#m; s#(repository: ghcr\.io/flarenzy/ipam-migrate\s+tag: )\S+#${1}'"$RELEASE_TAG"'#m' "$STAGE_DIR/values.yaml"
+
+          echo "STAGE_DIR=$STAGE_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify staged chart metadata
+        env:
+          RELEASE_TAG: ${{ needs.validate-release-tag.outputs.release_tag }}
+        run: |
+          grep -q "^version: $RELEASE_TAG$" "$STAGE_DIR/Chart.yaml"
+          grep -q "^appVersion: \"$RELEASE_TAG\"$" "$STAGE_DIR/Chart.yaml"
+          grep -A1 "repository: ghcr.io/flarenzy/ipam-api" "$STAGE_DIR/values.yaml" | grep -q "tag: $RELEASE_TAG"
+          grep -A1 "repository: ghcr.io/flarenzy/ipam-fe" "$STAGE_DIR/values.yaml" | grep -q "tag: $RELEASE_TAG"
+          grep -A1 "repository: ghcr.io/flarenzy/ipam-migrate" "$STAGE_DIR/values.yaml" | grep -q "tag: $RELEASE_TAG"
+
+      - name: Lint and render staged chart
+        env:
+          RELEASE_TAG: ${{ needs.validate-release-tag.outputs.release_tag }}
+        run: |
+          helm lint "$STAGE_DIR"
+          helm template release-test "$STAGE_DIR" > "$RUNNER_TEMP/rendered.yaml"
+          grep -q "ghcr.io/flarenzy/ipam-api:$RELEASE_TAG" "$RUNNER_TEMP/rendered.yaml"
+          grep -q "ghcr.io/flarenzy/ipam-fe:$RELEASE_TAG" "$RUNNER_TEMP/rendered.yaml"
+          grep -q "ghcr.io/flarenzy/ipam-migrate:$RELEASE_TAG" "$RUNNER_TEMP/rendered.yaml"
+
+      - name: Package and sign release chart
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          helm package \
+            --sign \
+            --key "$HELM_GPG_KEY_FINGERPRINT" \
+            --passphrase-file "$HELM_GPG_PASSPHRASE_FILE" \
+            --destination "$RUNNER_TEMP/dist" \
+            "$STAGE_DIR"
+
+      - name: Push signed chart to GHCR OCI
+        run: helm push "$RUNNER_TEMP/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz" "oci://${{ env.REGISTRY }}/${{ needs.validate-release-tag.outputs.owner }}/${{ env.CHART_OCI_REPO }}"
+
+      - name: Upload signed chart artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-chart-${{ needs.validate-release-tag.outputs.release_tag }}
+          path: |
+            ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz
+            ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz.prov
+
+      - name: Publish release summary
+        env:
+          RELEASE_TAG: ${{ needs.validate-release-tag.outputs.release_tag }}
+          CHART_REF: ${{ needs.validate-release-tag.outputs.chart_ref }}
+        run: |
+          {
+            echo "## Release Published"
+            echo
+            echo "- Release tag: \`$RELEASE_TAG\`"
+            echo "- Chart: \`$CHART_REF --version $RELEASE_TAG\`"
+            echo "- Images:"
+            echo "  - \`${{ env.REGISTRY }}/${{ needs.validate-release-tag.outputs.owner }}/ipam-api:$RELEASE_TAG\`"
+            echo "  - \`${{ env.REGISTRY }}/${{ needs.validate-release-tag.outputs.owner }}/ipam-fe:$RELEASE_TAG\`"
+            echo "  - \`${{ env.REGISTRY }}/${{ needs.validate-release-tag.outputs.owner }}/ipam-migrate:$RELEASE_TAG\`"
+          } >> "$GITHUB_STEP_SUMMARY"
