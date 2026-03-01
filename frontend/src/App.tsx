@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getEnv } from "./env";
-import keycloak, { keycloakEnabled } from "./keycloak";
+import keycloak, { initKeycloak, keycloakEnabled } from "./keycloak";
 
 type View = "home" | "subnet";
 
@@ -113,8 +113,7 @@ export default function App() {
 			};
 		}
 
-		authClient
-			.init({ onLoad: "login-required", checkLoginIframe: false })
+		initKeycloak()
 			.then((authenticated) => {
 				if (cancelled) return;
 				if (!authenticated) {

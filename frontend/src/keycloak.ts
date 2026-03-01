@@ -15,4 +15,32 @@ const keycloak = keycloakEnabled
 		})
 	: null;
 
+let keycloakInitPromise: Promise<boolean> | null = null;
+let keycloakInitialized = false;
+
+export const initKeycloak = () => {
+	if (!keycloakEnabled || !keycloak) {
+		return Promise.resolve(false);
+	}
+	if (keycloakInitPromise) {
+		return keycloakInitPromise;
+	}
+	if (keycloakInitialized) {
+		return Promise.resolve(Boolean(keycloak.authenticated));
+	}
+
+	keycloakInitPromise = keycloak
+		.init({ onLoad: "login-required", checkLoginIframe: false })
+		.then((authenticated) => {
+			keycloakInitialized = true;
+			return authenticated;
+		})
+		.catch((err) => {
+			keycloakInitPromise = null;
+			throw err;
+		});
+
+	return keycloakInitPromise;
+};
+
 export default keycloak;

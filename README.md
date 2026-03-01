@@ -44,6 +44,33 @@ Prereqs: `minikube` (with the ingress addon), `helm`, access to GHCR images, and
 Notes:
 - Migration hook runs as a Helm post-install/upgrade job using the `ipam-migrate` image; ensure `DB_CONN` secret exists before deploying.
 - Images are published to GHCR: `ghcr.io/flarenzy/ipam-api`, `ghcr.io/flarenzy/ipam-fe`, `ghcr.io/flarenzy/ipam-migrate`.
+- CI now publishes `linux/amd64` and `linux/arm64` manifests for the first-party images. On Apple Silicon, use immutable SHA tags plus `imagePullPolicy=Always` while validating fresh builds so the cluster does not reuse a cached `latest`.
+
+## Local Dev (Compose + Keycloak)
+
+- The recommended local dev stack is:
+  1. `make dev-up`
+  2. `make db-migrate`
+  3. `make run`
+  4. open `http://localhost:5173`
+- `make dev-up` starts Postgres and Keycloak from `dev/docker-compose.yaml` on:
+  - `localhost:5432`
+  - `localhost:8080`
+- `make run` starts:
+  - the API on `localhost:4040`
+  - the frontend on `localhost:5173`
+- `make run` now wires local auth automatically:
+  - API:
+    - `AUTH_ENABLED=true`
+    - `KEYCLOAK_ISSUER=http://localhost:8080/realms/ipam`
+    - `KEYCLOAK_AUDIENCE=ipam-api`
+    - `KEYCLOAK_JWKS_URL=http://localhost:8080/realms/ipam/protocol/openid-connect/certs`
+  - Frontend:
+    - `VITE_KEYCLOAK_URL=http://localhost:8080`
+    - `VITE_KEYCLOAK_REALM=ipam`
+    - `VITE_KEYCLOAK_CLIENT_ID=ipam-fe`
+    - `VITE_API_BASE=/api/v1`
+- The local Keycloak realm import comes from `dev/ipam-realm.json` and is scoped to `localhost:5173` / `127.0.0.1:5173`.
 
 ## Optional: Keycloak
 

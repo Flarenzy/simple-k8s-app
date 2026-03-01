@@ -4,6 +4,12 @@ APP_NAME := ipam
 GO_FILES := $(shell find . -type f -name '*.go')
 DB_DSN := postgres://ipam:ipam@localhost:5432/ipam?sslmode=disable
 COMPOSE := podman compose -f dev/docker-compose.yaml
+LOCAL_KEYCLOAK_URL := http://localhost:8080
+LOCAL_KEYCLOAK_REALM := ipam
+LOCAL_KEYCLOAK_CLIENT_ID := ipam-fe
+LOCAL_KEYCLOAK_ISSUER := $(LOCAL_KEYCLOAK_URL)/realms/$(LOCAL_KEYCLOAK_REALM)
+LOCAL_KEYCLOAK_AUDIENCE := ipam-api
+LOCAL_KEYCLOAK_JWKS_URL := $(LOCAL_KEYCLOAK_ISSUER)/protocol/openid-connect/certs
 
 .PHONY: docs format run run-api
 
@@ -12,13 +18,13 @@ COMPOSE := podman compose -f dev/docker-compose.yaml
 ## ------------------------------
 
 run:
-	@echo "Starting backend (4040) and frontend (5173)..."
+	@echo "Starting backend (4040) and frontend (5173) with local Keycloak..."
 	@cd frontend && test -d node_modules || npm install
-	@bash -c 'trap "kill 0" EXIT; DB_CONN="$(DB_DSN)" PORT=4040 go run ./cmd/api & npm --prefix frontend run dev -- --host'
+	@bash -c 'trap "kill 0" EXIT; DB_CONN="$(DB_DSN)" PORT=4040 AUTH_ENABLED=true KEYCLOAK_ISSUER="$(LOCAL_KEYCLOAK_ISSUER)" KEYCLOAK_AUDIENCE="$(LOCAL_KEYCLOAK_AUDIENCE)" KEYCLOAK_JWKS_URL="$(LOCAL_KEYCLOAK_JWKS_URL)" go run ./cmd/api & VITE_KEYCLOAK_URL="$(LOCAL_KEYCLOAK_URL)" VITE_KEYCLOAK_REALM="$(LOCAL_KEYCLOAK_REALM)" VITE_KEYCLOAK_CLIENT_ID="$(LOCAL_KEYCLOAK_CLIENT_ID)" VITE_API_BASE="/api/v1" npm --prefix frontend run dev -- --host'
 
 run-api:
 	@echo "Running $(APP_NAME)..."
-	DB_CONN="$(DB_DSN)" go run ./cmd/api
+	DB_CONN="$(DB_DSN)" PORT=4040 AUTH_ENABLED=true KEYCLOAK_ISSUER="$(LOCAL_KEYCLOAK_ISSUER)" KEYCLOAK_AUDIENCE="$(LOCAL_KEYCLOAK_AUDIENCE)" KEYCLOAK_JWKS_URL="$(LOCAL_KEYCLOAK_JWKS_URL)" go run ./cmd/api
 
 build:
 	mkdir bin
