@@ -149,9 +149,11 @@ jobs:
             echo "Failed to find imported GPG key fingerprint" >&2
             exit 1
           fi
+          gpg --batch --export > "$GNUPGHOME/pubring.gpg"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           echo "HELM_GPG_KEY_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
           echo "HELM_GPG_PASSPHRASE_FILE=$RUNNER_TEMP/helm-gpg-passphrase" >> "$GITHUB_ENV"
+          echo "HELM_GPG_KEYRING=$GNUPGHOME/pubring.gpg" >> "$GITHUB_ENV"
 
       - name: Stage release chart
         env:
@@ -192,6 +194,7 @@ jobs:
           helm package \
             --sign \
             --key "$HELM_GPG_KEY_FINGERPRINT" \
+            --keyring "$HELM_GPG_KEYRING" \
             --passphrase-file "$HELM_GPG_PASSPHRASE_FILE" \
             --destination "$RUNNER_TEMP/dist" \
             "$STAGE_DIR"
