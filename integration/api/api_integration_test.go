@@ -389,7 +389,7 @@ func newIntegrationSuite(ctx context.Context) (*integrationSuite, error) {
 		return nil, err
 	}
 
-	if err := runGooseMigrations(ctx, dsn); err != nil {
+	if err = runGooseMigrations(ctx, dsn); err != nil {
 		_ = s.postgres.Terminate(ctx)
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func newIntegrationSuite(ctx context.Context) (*integrationSuite, error) {
 		return nil, err
 	}
 
-	if err := s.startAPI(ctx, dsn); err != nil {
+	if err = s.startAPI(ctx, dsn); err != nil {
 		_ = s.keycloak.Terminate(ctx)
 		_ = s.postgres.Terminate(ctx)
 		return nil, err
@@ -590,7 +590,7 @@ func startKeycloak(ctx context.Context) (testcontainers.Container, string, error
 	}
 
 	issuerURL := fmt.Sprintf("http://%s:%s/realms/%s", host, port.Port(), testRealm)
-	if err := waitForHTTP200(ctx, issuerURL+"/.well-known/openid-configuration"); err != nil {
+	if err = waitForHTTP200(ctx, issuerURL+"/.well-known/openid-configuration"); err != nil {
 		_ = container.Terminate(ctx)
 		return nil, "", err
 	}
