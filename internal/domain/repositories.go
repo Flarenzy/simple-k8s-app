@@ -11,8 +11,8 @@ type SubnetRepository interface {
 
 type IPRepository interface {
 	ListBySubnetID(ctx context.Context, subnetID int64) ([]IPAddress, error)
-	FindByIDAndSubnet(ctx context.Context, id string, subnetID int64) (IPAddress, error)
+	FindByIDAndSubnet(ctx context.Context, id IPAddressID, subnetID int64) (IPAddress, error)
 	Create(ctx context.Context, input CreateIPInput, subnetID int64) (IPAddress, error)
-	UpdateHostname(ctx context.Context, id string, input UpdateIPInput) (IPAddress, error)
-	DeleteByIDAndSubnet(ctx context.Context, id string, subnetID int64) (bool, error)
+	UpdateHostname(ctx context.Context, id IPAddressID, input UpdateIPInput) (IPAddress, error)
+	DeleteByIDAndSubnet(ctx context.Context, id IPAddressID, subnetID int64) (bool, error)
 }

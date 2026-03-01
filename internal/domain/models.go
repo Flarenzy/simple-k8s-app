@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+type IPAddressID string
+
 type Subnet struct {
 	ID          int64
 	CIDR        netip.Prefix
@@ -14,7 +16,7 @@ type Subnet struct {
 }
 
 type IPAddress struct {
-	ID        string
+	ID        IPAddressID
 	IP        netip.Addr
 	Hostname  string
 	SubnetID  int64
