@@ -6,7 +6,7 @@ on:
       - "*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -216,6 +216,15 @@ jobs:
           path: |
             ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz
             ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz.prov
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate-release-tag.outputs.release_tag }}
+          files: |
+            ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz
+            ${{ runner.temp }}/dist/${{ env.CHART_NAME }}-${{ needs.validate-release-tag.outputs.release_tag }}.tgz.prov
+            docs/helm-release-public.asc
 
       - name: Publish release summary
         env:

@@ -45,6 +45,7 @@ Notes:
 - Migration hook runs as a Helm post-install/upgrade job using the `ipam-migrate` image; ensure `DB_CONN` secret exists before deploying.
 - Images are published to GHCR: `ghcr.io/flarenzy/ipam-api`, `ghcr.io/flarenzy/ipam-fe`, `ghcr.io/flarenzy/ipam-migrate`.
 - CI now publishes `linux/amd64` and `linux/arm64` manifests for the first-party images. On Apple Silicon, use immutable SHA tags plus `imagePullPolicy=Always` while validating fresh builds so the cluster does not reuse a cached `latest`.
+- Tagged releases also publish a signed OCI Helm chart to `oci://ghcr.io/flarenzy/charts/ipam`. The matching `.tgz`, `.prov`, and public signing key are attached to the GitHub Release so consumers can verify provenance. The public key is committed at `docs/helm-release-public.asc`.
 
 ## Local Dev (Compose + Keycloak)
 
@@ -137,4 +138,3 @@ Notes:
   - `api.auth.audience` should match the API audience expected in the token, for example `ipam-api`.
   - `api.auth.jwksURL` should point to the in-cluster Keycloak service when the public issuer host is only resolvable on your workstation, for example `http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs`.
   - The frontend reads its Keycloak runtime config from `env.js`, via Helm `fe.env` (`VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`, `VITE_KEYCLOAK_CLIENT_ID`).
-![img_2.png](img_2.png)![img_3.png](img_3.png)![img_4.png](img_4.png)

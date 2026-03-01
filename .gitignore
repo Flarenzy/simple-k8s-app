@@ -6,5 +6,4 @@ tasks
 *.pem
 *.tsbuildinfo
 helm-release-private.asc
-helm-release-public.asc
 helm-release-passphrase.txt
