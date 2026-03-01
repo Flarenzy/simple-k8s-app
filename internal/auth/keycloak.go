@@ -15,7 +15,7 @@ type keycloakAuthenticator struct {
 	jwks     keyfunc.Keyfunc
 }
 
-func NewKeycloakAuthenticator(cfg Config) (Authenticator, error) {
+func NewKeycloakAuthenticator(ctx context.Context, cfg Config) (Authenticator, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -28,7 +28,7 @@ func NewKeycloakAuthenticator(cfg Config) (Authenticator, error) {
 		jwksURL = cfg.Issuer + "/protocol/openid-connect/certs"
 	}
 
-	kf, err := keyfunc.NewDefaultCtx(context.Background(), []string{jwksURL})
+	kf, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
 	if err != nil {
 		return nil, fmt.Errorf("fetch jwks from %s: %w", jwksURL, err)
 	}

@@ -24,7 +24,7 @@ func (a *API) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // @Router /readyz [get]
 func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := a.DB.Ping(ctx); err != nil {
+	if err := a.Health.Ping(ctx); err != nil {
 		a.Logger.Error("db ping failed", "err", err)
 		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
 		return

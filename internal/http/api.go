@@ -1,26 +1,30 @@
 package http
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
 	apiauth "github.com/Flarenzy/simple-k8s-app/internal/auth"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
 
+type HealthChecker interface {
+	Ping(ctx context.Context) error
+}
+
 type API struct {
 	Logger        *slog.Logger
-	DB            *pgxpool.Pool
+	Health        HealthChecker
 	Service       domain.NetworkService
 	Authenticator apiauth.Authenticator
 }
 
-func NewAPI(logger *slog.Logger, db *pgxpool.Pool, svc domain.NetworkService, authenticator apiauth.Authenticator) *API {
+func NewAPI(logger *slog.Logger, health HealthChecker, svc domain.NetworkService, authenticator apiauth.Authenticator) *API {
 	return &API{
 		Logger:        logger,
-		DB:            db,
+		Health:        health,
 		Service:       svc,
 		Authenticator: authenticator,
 	}

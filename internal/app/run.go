@@ -62,15 +62,14 @@ func Run(ctx context.Context, cfg Config) error {
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
 	networkService := domain.NewNetworkService(subnetRepo, ipRepo)
-	authenticator, err := apiauth.NewKeycloakAuthenticator(apiauth.Config{
+	authenticator, err := apiauth.NewKeycloakAuthenticator(ctx, apiauth.Config{
 		Enabled:  cfg.AuthEnabled,
 		Issuer:   cfg.Issuer,
 		Audience: cfg.Audience,
 		JWKSURL:  cfg.JWKSURL,
 	})
 	if err != nil {
-		logger.Warn("failed to initialize authenticator; starting without auth", "err", err)
-		authenticator = nil
+		return fmt.Errorf("initialize authenticator: %w", err)
 	}
 
 	api := apihttp.NewAPI(logger, pool, networkService, authenticator)
