@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	appdb "github.com/Flarenzy/simple-k8s-app/internal/db"
 	sqlcdb "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	apihttp "github.com/Flarenzy/simple-k8s-app/internal/http"
 )
 
@@ -56,8 +58,11 @@ func Run(ctx context.Context, cfg Config) error {
 	defer pool.Close()
 
 	queries := sqlcdb.New(pool)
+	subnetRepo := appdb.NewSubnetRepository(queries)
+	ipRepo := appdb.NewIPRepository(queries)
+	networkService := domain.NewNetworkService(subnetRepo, ipRepo)
 
-	api := apihttp.NewAPI(logger, pool, queries, apihttp.AuthConfig{
+	api := apihttp.NewAPI(logger, pool, networkService, apihttp.AuthConfig{
 		Enabled:  cfg.AuthEnabled,
 		Issuer:   cfg.Issuer,
 		Audience: cfg.Audience,
@@ -73,7 +78,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	go func() {
 		fmt.Printf("Serving server on port %s\n", cfg.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err = server.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
 			fmt.Printf("ListenAndServe error: %s\n", err)
 		}
 	}()

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 
@@ -48,6 +49,9 @@ func (s *networkService) DeleteSubnet(ctx context.Context, id int64) error {
 
 func (s *networkService) ListIPs(ctx context.Context, subnetID int64) ([]IPAddress, error) {
 	if _, err := s.subnets.FindByID(ctx, subnetID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: %w", ErrNotFound, ErrSubnetNotFound)
+		}
 		return nil, err
 	}
 	return s.ips.ListBySubnetID(ctx, subnetID)
@@ -56,6 +60,9 @@ func (s *networkService) ListIPs(ctx context.Context, subnetID int64) ([]IPAddre
 func (s *networkService) CreateIP(ctx context.Context, subnetID int64, input CreateIPInput) (IPAddress, error) {
 	subnet, err := s.subnets.FindByID(ctx, subnetID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return IPAddress{}, fmt.Errorf("%w: %w", ErrNotFound, ErrSubnetNotFound)
+		}
 		return IPAddress{}, err
 	}
 
@@ -73,9 +80,15 @@ func (s *networkService) CreateIP(ctx context.Context, subnetID int64, input Cre
 
 func (s *networkService) UpdateIPHostname(ctx context.Context, subnetID int64, id IPAddressID, input UpdateIPInput) (IPAddress, error) {
 	if _, err := s.subnets.FindByID(ctx, subnetID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return IPAddress{}, fmt.Errorf("%w: %w", ErrNotFound, ErrSubnetNotFound)
+		}
 		return IPAddress{}, err
 	}
 	if _, err := s.ips.FindByIDAndSubnet(ctx, id, subnetID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return IPAddress{}, fmt.Errorf("%w: %w", ErrNotFound, ErrIPNotFound)
+		}
 		return IPAddress{}, err
 	}
 	return s.ips.UpdateHostname(ctx, id, input)

@@ -1,15 +1,11 @@
 package http
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"net/http"
-	"net/netip"
 
-	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
+	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	"github.com/MicahParks/keyfunc/v3"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swaggo/http-swagger" // http-swagger middleware
 )
@@ -17,18 +13,18 @@ import (
 type API struct {
 	Logger       *slog.Logger
 	DB           *pgxpool.Pool
-	Queries      *sqlc.Queries
+	Service      domain.NetworkService
 	authEnabled  bool
 	authIssuer   string
 	authAudience string
 	jwks         keyfunc.Keyfunc
 }
 
-func NewAPI(logger *slog.Logger, db *pgxpool.Pool, queries *sqlc.Queries, authCfg AuthConfig) *API {
+func NewAPI(logger *slog.Logger, db *pgxpool.Pool, svc domain.NetworkService, authCfg AuthConfig) *API {
 	a := &API{
 		Logger:  logger,
 		DB:      db,
-		Queries: queries,
+		Service: svc,
 	}
 	a.initAuth(authCfg)
 	return a
@@ -53,17 +49,4 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}/ips/{uuid}", a.handleDeleteIPByUUIDandSubnetID)
 
 	return a.authMiddleware(mux)
-}
-
-func (a *API) subnetExists(ctx context.Context, id int64) (bool, netip.Prefix, error) {
-	subnet, err := a.Queries.GetSubnetByID(ctx, id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		a.Logger.DebugContext(ctx, "not found", "id", id, "err", err.Error())
-		return false, netip.Prefix{}, nil
-	}
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unexpected error", "err", err.Error())
-		return false, netip.Prefix{}, err
-	}
-	return true, subnet.Cidr, nil
 }

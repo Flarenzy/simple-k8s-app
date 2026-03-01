@@ -2,19 +2,17 @@ package http
 
 import (
 	"errors"
+	"io"
 	"net/http"
-	"strconv"
 
-	db "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v5"
+	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 )
 
 // @Summary Health check
 // @Tags health
 // @Success 200 {string} string "ok"
 // @Router /healthz [get]
-func (a *API) handleHealthz(w http.ResponseWriter, r *http.Request) {
+func (a *API) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
@@ -45,9 +43,9 @@ func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/subnets [get]
 func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	subnets, err := a.Queries.ListSubnets(ctx)
+	subnets, err := a.Service.ListSubnets(ctx)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "reading subnets from db", "err", err.Error())
+		a.Logger.ErrorContext(ctx, "reading subnets", "err", err.Error())
 		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "couldn't encode response", "err", err)
@@ -73,7 +71,12 @@ func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	subnetReq, err := decode[CreateSubnetRequest](r)
-	defer r.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "closing body", "err", err.Error())
+		}
+	}(r.Body)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "unmarshaling subnet from request", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
@@ -83,20 +86,17 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnet, err := subnetReq.toParams()
+	respSubnet, err := a.Service.CreateSubnet(ctx, subnetReq.toInput())
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "parsing cidr from request", "err", err.Error(), "cidr", subnetReq.CIDR)
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "invalid cidr"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
+		status := http.StatusInternalServerError
+		resp := ErrorResponse{Error: "internal server error while saving subnet to db"}
+		if errors.Is(err, domain.ErrInvalidInput) {
+			status = http.StatusBadRequest
+			resp = ErrorResponse{Error: "invalid cidr"}
 		}
-		return
-	}
 
-	respSubnet, err := a.Queries.CreateSubnet(ctx, subnet)
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "inserting subnet into db", "err", err.Error(), "subnet", subnet.Cidr)
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error while saving subnet to db"})
+		a.Logger.ErrorContext(ctx, "creating subnet", "err", err.Error(), "cidr", subnetReq.CIDR)
+		err = encode(w, r, status, resp)
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 		}
@@ -120,10 +120,9 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/subnets/{id} [get]
 func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	strID := r.PathValue("id")
-	id, err := strconv.ParseInt(strID, 10, 64)
+	id, err := parsePathInt64(r, "id")
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "strID", strID, "err", err.Error())
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
@@ -131,12 +130,12 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnet, err := a.Queries.GetSubnetByID(ctx, id)
+	subnet, err := a.Service.GetSubnet(ctx, id)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "subnet with following id not found", "id", id, "err", err.Error())
+		a.Logger.ErrorContext(ctx, "failed to get subnet by id", "id", id, "err", err.Error())
 		status := http.StatusInternalServerError
 		resp := ErrorResponse{Error: "internal server error"}
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, domain.ErrNotFound) {
 			status = http.StatusNotFound
 			resp = ErrorResponse{Error: "subnet not found"}
 		}
@@ -177,27 +176,13 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnetExists, subnet, err := a.subnetExists(ctx, id)
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
-	if !subnetExists {
-		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
-		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
 	ipReq, err := decode[CreateIPRequest](r)
-	defer r.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "closing body", "err", err.Error())
+		}
+	}(r.Body)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "unmarshaling ip from request", "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
@@ -207,38 +192,33 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip, err := ipReq.toParams(id)
+	respIP, err := a.Service.CreateIP(ctx, id, ipReq.toInput())
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "can't parse ip from request", "ip", ipReq.IP, "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
-	err = validateIPInSubnet(subnet, ip.Ip)
-	if err != nil {
-		a.Logger.DebugContext(ctx, "invalid ip", "ip", ip.Ip.String(), "subnet", subnet.String())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
-	respIP, err := a.Queries.CreateIPAddress(ctx, ip)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.ConstraintName == "unique_ip" {
-			a.Logger.DebugContext(ctx, "tried to enter duplicate ip", "ip", ip.Ip, "err", err.Error())
+		if errors.Is(err, domain.ErrConflict) {
+			a.Logger.DebugContext(ctx, "tried to enter duplicate ip", "ip", ipReq.IP, "err", err.Error())
 			err := encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request, ip exists"})
 			if err != nil {
 				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 			}
 			return
 		}
-		a.Logger.ErrorContext(ctx, "cant create IP address", "err", err, "ip", ip)
+		if errors.Is(err, domain.ErrNotFound) {
+			a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
+			err := encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
+		if errors.Is(err, domain.ErrInvalidInput) {
+			a.Logger.DebugContext(ctx, "invalid ip request", "ip", ipReq.IP, "err", err.Error())
+			err := encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
+		a.Logger.ErrorContext(ctx, "cant create IP address", "err", err, "ip", ipReq.IP)
 		err := encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error while creating ip"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
@@ -275,36 +255,23 @@ func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnetExists, _, err := a.subnetExists(ctx, id)
+	respIPs, err := a.Service.ListIPs(ctx, id)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		status := http.StatusInternalServerError
+		resp := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			resp = ErrorResponse{Error: "subnet not found"}
 		}
-		return
-	}
-
-	if !subnetExists {
-		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
-		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
-	respIPs, err := a.Queries.ListIPsBySubnetID(ctx, id)
-	if err != nil {
 		a.Logger.ErrorContext(ctx, "can't list ips by subnet id", "id", id, "err", err.Error())
-		err := encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		err := encode(w, r, status, resp)
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 		}
 		return
 	}
 
-	err = encode(w, r, http.StatusOK, ipsToreponse(respIPs))
+	err = encode(w, r, http.StatusOK, ipsToResponse(respIPs))
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 	}
@@ -336,7 +303,7 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	strUUID := r.PathValue("uuid")
-	reqUuid, err := strToUUID(strUUID)
+	reqID, err := parseIPAddressID(strUUID)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "invalid uuid", "uuid", strUUID, "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
@@ -356,50 +323,23 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnetExists, _, err := a.subnetExists(ctx, id)
+	respIP, err := a.Service.UpdateIPHostname(ctx, id, reqID, reqHostname.toInput())
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "uncaught error while checking for subnet", "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		status := http.StatusInternalServerError
+		resp := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrSubnetNotFound) {
+			status = http.StatusNotFound
+			resp = ErrorResponse{Error: "subnet not found"}
+		} else if errors.Is(err, domain.ErrIPNotFound) || errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			resp = ErrorResponse{Error: "ip not found"}
 		}
-		return
-	}
-
-	if !subnetExists {
-		a.Logger.InfoContext(ctx, "subnet doesn't exist for given id", "id", id)
-		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		if errors.Is(err, domain.ErrInvalidInput) {
+			status = http.StatusBadRequest
+			resp = ErrorResponse{Error: "bad request"}
 		}
-		return
-	}
-
-	_, err = a.Queries.GetIPByUUIDandSubnetID(ctx, db.GetIPByUUIDandSubnetIDParams{
-		ID:       reqUuid,
-		SubnetID: id,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			a.Logger.DebugContext(ctx, "ip for uuid not found", "uuid", reqUuid.String(), "err", err.Error())
-			err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "ip not found"})
-			if err != nil {
-				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-			}
-			return
-		}
-		a.Logger.ErrorContext(ctx, "uncaught error", "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
-		return
-	}
-
-	respIP, err := a.Queries.UpdateIPByUUID(ctx, reqHostname.toParams(reqUuid))
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "failed to update IP with given UUID", "uuid", reqUuid.String(), "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+		a.Logger.ErrorContext(ctx, "failed to update IP with given UUID", "uuid", string(reqID), "err", err.Error())
+		err = encode(w, r, status, resp)
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 		}
@@ -437,7 +377,7 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 	}
 
 	strUUID := r.PathValue("uuid")
-	reqUuid, err := strToUUID(strUUID)
+	reqID, err := parseIPAddressID(strUUID)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "invalid uuid", "uuid", strUUID, "err", err.Error())
 		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
@@ -447,21 +387,24 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	_, err = a.Queries.DeleteIPByUUIDandSubnetID(ctx, db.DeleteIPByUUIDandSubnetIDParams{
-		ID:       reqUuid,
-		SubnetID: id,
-	})
-
+	err = a.Service.DeleteIP(ctx, id, reqID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			a.Logger.DebugContext(ctx, "subnet id or ip uuid not found", "id", id, "uuid", reqUuid.String(), "err", err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			a.Logger.DebugContext(ctx, "subnet id or ip uuid not found", "id", id, "uuid", string(reqID), "err", err.Error())
 			err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet or ip not found"})
 			if err != nil {
 				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 			}
 			return
 		}
-		a.Logger.ErrorContext(ctx, "uncaught error while deleting for ip", "id", id, "uuid", reqUuid.String(), "err", err.Error())
+		if errors.Is(err, domain.ErrInvalidInput) {
+			err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+			if err != nil {
+				a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+			}
+			return
+		}
+		a.Logger.ErrorContext(ctx, "uncaught error while deleting for ip", "id", id, "uuid", string(reqID), "err", err.Error())
 		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
@@ -494,19 +437,16 @@ func (a *API) handleDeleteSubnetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	numOfDelRows, err := a.Queries.DeleteSubnetByID(ctx, id)
+	err = a.Service.DeleteSubnet(ctx, id)
 	if err != nil {
-		a.Logger.ErrorContext(ctx, "uncaught error while deleting subnet", "id", id, "err", err.Error())
-		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		status := http.StatusInternalServerError
+		resp := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			resp = ErrorResponse{Error: "subnet not found"}
 		}
-		return
-	}
-
-	if numOfDelRows == 0 {
-		a.Logger.DebugContext(ctx, "subnet id not found", "id", id)
-		err = encode(w, r, http.StatusNotFound, ErrorResponse{Error: "subnet not found"})
+		a.Logger.ErrorContext(ctx, "failed to delete subnet", "id", id, "err", err.Error())
+		err = encode(w, r, status, resp)
 		if err != nil {
 			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
 		}
