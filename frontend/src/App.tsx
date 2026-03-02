@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, memo, useEffect, useMemo, useState } from "react";
 import { getEnv } from "./env";
 import keycloak, { initKeycloak, keycloakEnabled } from "./keycloak";
 
@@ -22,6 +22,74 @@ type IPAddress = {
 };
 
 const API_BASE = getEnv("VITE_API_BASE", "/api/v1");
+const VISIBLE_IP_WINDOW = 256;
+
+type ParsedSubnet = {
+	network: number;
+	count: number;
+};
+
+function parseSubnetCidr(cidr: string): ParsedSubnet | null {
+	const [addr, maskStr] = cidr.split("/");
+	const mask = Number(maskStr);
+	if (!addr || Number.isNaN(mask) || mask < 0 || mask > 32) {
+		return null;
+	}
+
+	const octets = addr.split(".").map((n) => Number(n));
+	if (octets.length !== 4 || octets.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+		return null;
+	}
+
+	const network =
+		(((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0) &
+		(mask === 0 ? 0 : (0xffffffff << (32 - mask)) >>> 0);
+	const count = mask === 32 ? 1 : 2 ** (32 - mask);
+
+	return { network, count };
+}
+
+function intToIp(num: number): string {
+	return `${(num >>> 24) & 255}.${(num >>> 16) & 255}.${(num >>> 8) & 255}.${num & 255}`;
+}
+
+type IpTableRowProps = {
+	ipAddress: string;
+	record?: IPAddress;
+	isSaving: boolean;
+	onSave: (ip: string, hostname: string) => void;
+};
+
+const IpTableRow = memo(
+	function IpTableRow({ ipAddress, record, isSaving, onSave }: IpTableRowProps) {
+		const [draft, setDraft] = useState(record?.hostname ?? "");
+
+		useEffect(() => {
+			setDraft(record?.hostname ?? "");
+		}, [record?.hostname]);
+
+		return (
+			<tr>
+				<td className="mono">{ipAddress}</td>
+				<td>
+					<input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="(unset)" />
+				</td>
+				<td className="muted">{record?.updated_at ? new Date(record.updated_at).toLocaleString() : ""}</td>
+				<td>
+					<button className="secondary" type="button" disabled={isSaving} onClick={() => onSave(ipAddress, draft)}>
+						{isSaving ? "Saving..." : "Save"}
+					</button>
+				</td>
+			</tr>
+		);
+	},
+	(prev, next) =>
+		prev.ipAddress === next.ipAddress &&
+		prev.record?.id === next.record?.id &&
+		prev.record?.hostname === next.record?.hostname &&
+		prev.record?.updated_at === next.record?.updated_at &&
+		prev.isSaving === next.isSaving,
+);
 
 export default function App() {
 	const [view, setView] = useState<View>("home");
@@ -32,7 +100,6 @@ export default function App() {
 	const [ips, setIps] = useState<IPAddress[]>([]);
 	const [ipsLoading, setIpsLoading] = useState(false);
 	const [ipsError, setIpsError] = useState<string | null>(null);
-	const [hostnameDrafts, setHostnameDrafts] = useState<Record<string, string>>({});
 	const [savingIp, setSavingIp] = useState<string | null>(null);
 	const [ipSaveError, setIpSaveError] = useState<string | null>(null);
 	const [ipDeleteError, setIpDeleteError] = useState<string | null>(null);
@@ -45,6 +112,7 @@ export default function App() {
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [authReady, setAuthReady] = useState(false);
 	const [authError, setAuthError] = useState<string | null>(null);
+	const [windowStart, setWindowStart] = useState(0);
 
 	const authClient = keycloak;
 
@@ -164,32 +232,33 @@ export default function App() {
 		fetchIps();
 	}, [selectedSubnet, view]);
 
-	const allIps = useMemo(() => {
-		if (!selectedSubnet) return [];
-		const [addr, maskStr] = selectedSubnet.cidr.split("/");
-		const mask = Number(maskStr);
-		if (!addr || Number.isNaN(mask) || mask < 0 || mask > 32) {
+	useEffect(() => {
+		setWindowStart(0);
+	}, [selectedSubnet?.id, view]);
+
+	const parsedSubnet = useMemo(() => {
+		if (!selectedSubnet) {
+			return null;
+		}
+		return parseSubnetCidr(selectedSubnet.cidr);
+	}, [selectedSubnet]);
+
+	const subnetIpCount = parsedSubnet?.count ?? 0;
+	const maxWindowStart = subnetIpCount > VISIBLE_IP_WINDOW ? Math.floor((subnetIpCount - 1) / VISIBLE_IP_WINDOW) * VISIBLE_IP_WINDOW : 0;
+	const safeWindowStart = Math.min(windowStart, maxWindowStart);
+	const visibleRangeEnd = subnetIpCount === 0 ? 0 : Math.min(safeWindowStart + VISIBLE_IP_WINDOW, subnetIpCount);
+
+	const visibleIps = useMemo(() => {
+		if (!parsedSubnet) {
 			return [];
 		}
-		const octets = addr.split(".").map((n) => Number(n));
-		if (octets.length !== 4 || octets.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
-			return [];
-		}
-		const toInt = (o: number[]) => ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0;
-		const toIP = (num: number) =>
-			`${(num >>> 24) & 255}.${(num >>> 16) & 255}.${(num >>> 8) & 255}.${num & 255}`;
-		const network = toInt(octets) & (mask === 0 ? 0 : (0xffffffff << (32 - mask)) >>> 0);
-		const count = mask === 32 ? 1 : 2 ** (32 - mask);
-		// Guard against extremely large subnets to avoid locking the UI.
-		if (count > 65536) {
-			return [];
-		}
+
 		const list: string[] = [];
-		for (let i = 0; i < count; i += 1) {
-			list.push(toIP((network + i) >>> 0));
+		for (let offset = safeWindowStart; offset < visibleRangeEnd; offset += 1) {
+			list.push(intToIp((parsedSubnet.network + offset) >>> 0));
 		}
 		return list;
-	}, [selectedSubnet]);
+	}, [parsedSubnet, safeWindowStart, visibleRangeEnd]);
 
 	const ipMap = useMemo(() => {
 		const map = new Map<string, IPAddress>();
@@ -244,11 +313,6 @@ export default function App() {
 				return;
 			}
 			setIps((prev) => prev.filter((ip) => ip.ip !== ipAddress));
-			setHostnameDrafts((prev) => {
-				const next = { ...prev };
-				delete next[ipAddress];
-				return next;
-			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "unknown error";
 			setIpDeleteError(message);
@@ -483,7 +547,7 @@ export default function App() {
 					<div className="panel__title-row">
 						<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
 							<h1 className="panel__title">{selectedSubnet.cidr}</h1>
-							<div className="pill">{allIps.length || ips.length}</div>
+							<div className="pill">{subnetIpCount || ips.length}</div>
 						</div>
 						<div className="muted">Subnet: {selectedSubnet.description || "No description"}</div>
 					</div>
@@ -492,59 +556,71 @@ export default function App() {
 					{ipsError ? <div className="error">Failed to load IPs: {ipsError}</div> : null}
 					{ipSaveError ? <div className="error">Save failed: {ipSaveError}</div> : null}
 					{ipDeleteError ? <div className="error">Delete failed: {ipDeleteError}</div> : null}
-					{allIps.length === 0 ? <div className="error">Cannot render IPs for this subnet.</div> : null}
+					{!parsedSubnet ? <div className="error">Cannot render IPs for this subnet.</div> : null}
 
-					<table className="table">
-						<thead>
-							<tr>
-								<th>IP</th>
-								<th>Hostname</th>
-								<th>Updated</th>
-								<th />
-							</tr>
-						</thead>
-						<tbody>
-							{allIps.length === 0 ? (
-								<tr>
-									<td colSpan={4} className="muted">
-										No IPs yet.
-									</td>
-								</tr>
-							) : (
-								allIps.map((ipAddress) => {
-									const record = ipMap.get(ipAddress);
-									const draft = hostnameDrafts[ipAddress] ?? record?.hostname ?? "";
-									return (
-										<tr key={ipAddress}>
-											<td className="mono">{ipAddress}</td>
-											<td>
-												<input
-													value={draft}
-													onChange={(e) =>
-														setHostnameDrafts((prev) => ({ ...prev, [ipAddress]: e.target.value }))
-													}
-													placeholder="(unset)"
-												/>
-											</td>
-											<td className="muted">
-												{record?.updated_at ? new Date(record.updated_at).toLocaleString() : ""}
-											</td>
-											<td>
-												<button
-													className="secondary"
-													type="button"
-													disabled={savingIp === ipAddress}
-													onClick={() => saveIpHostname(ipAddress, draft)}
-												>
-													{savingIp === ipAddress ? "Saving..." : "Save"}
-												</button>
+					{parsedSubnet ? (
+						<>
+							{subnetIpCount > VISIBLE_IP_WINDOW ? (
+								<div className="panel__title-row">
+									<div className="muted">
+										Showing {safeWindowStart + 1}-{visibleRangeEnd} of {subnetIpCount}
+									</div>
+									<div style={{ display: "flex", gap: "8px" }}>
+										<button
+											className="secondary"
+											type="button"
+											onClick={() => setWindowStart((prev) => Math.max(prev - VISIBLE_IP_WINDOW, 0))}
+											disabled={safeWindowStart === 0}
+										>
+											Previous
+										</button>
+										<button
+											className="secondary"
+											type="button"
+											onClick={() =>
+												setWindowStart((prev) => Math.min(prev + VISIBLE_IP_WINDOW, maxWindowStart))
+											}
+											disabled={safeWindowStart >= maxWindowStart}
+										>
+											Next
+										</button>
+									</div>
+								</div>
+							) : null}
+
+							<table className="table">
+								<thead>
+									<tr>
+										<th>IP</th>
+										<th>Hostname</th>
+										<th>Updated</th>
+										<th />
+									</tr>
+								</thead>
+								<tbody>
+									{visibleIps.length === 0 ? (
+										<tr>
+											<td colSpan={4} className="muted">
+												No IPs yet.
 											</td>
 										</tr>
-									);
-								})
-							)}
-						</tbody>
-					</table>
+									) : (
+										visibleIps.map((ipAddress) => (
+											<IpTableRow
+												key={ipAddress}
+												ipAddress={ipAddress}
+												record={ipMap.get(ipAddress)}
+												isSaving={savingIp === ipAddress}
+												onSave={(ip, hostname) => {
+													void saveIpHostname(ip, hostname);
+												}}
+											/>
+										))
+									)}
+								</tbody>
+							</table>
+						</>
+					) : null}
 				</main>
 			</div>
 		);
