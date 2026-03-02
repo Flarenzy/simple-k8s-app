@@ -29,6 +29,11 @@ type Config struct {
 	JWKSURL      string
 }
 
+var (
+	listenFn = net.Listen
+	serveFn  = Serve
+)
+
 func LoadConfig() Config {
 	cfg := Config{
 		DSN:          os.Getenv("DB_CONN"),
@@ -51,7 +56,7 @@ func LoadConfig() Config {
 }
 
 func Run(ctx context.Context, cfg Config) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.Port))
+	listener, err := listenFn("tcp", fmt.Sprintf(":%s", cfg.Port))
 	if err != nil {
 		return fmt.Errorf("listen on %q: %w", cfg.Port, err)
 	}
@@ -64,7 +69,7 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}()
 
-	return Serve(ctx, cfg, listener)
+	return serveFn(ctx, cfg, listener)
 }
 
 func Serve(ctx context.Context, cfg Config, listener net.Listener) error {

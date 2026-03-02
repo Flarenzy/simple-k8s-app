@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,5 +113,128 @@ func TestNewKeycloakAuthenticatorFailsWhenJWKSUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "jwks endpoint returned 502") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEnsureJWKSReachableReturnsNilOnSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	}))
+	defer server.Close()
+
+	if err := ensureJWKSReachable(context.Background(), server.URL); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestStringClaimReturnsEmptyForNonStringValues(t *testing.T) {
+	if got := stringClaim(jwt.MapClaims{"sub": 123}, "sub"); got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+	if got := stringClaim(jwt.MapClaims{}, "missing"); got != "" {
+		t.Fatalf("expected empty string for missing claim, got %q", got)
+	}
+}
+
+func TestNewKeycloakAuthenticatorSucceedsWithValidJWKS(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	jwk, err := jwkset.NewJWKFromKey(&privateKey.PublicKey, jwkset.JWKOptions{})
+	if err != nil {
+		t.Fatalf("create jwk: %v", err)
+	}
+
+	jwksPayload, err := json.Marshal(jwkset.JWKSMarshal{
+		Keys: []jwkset.JWKMarshal{jwk.Marshal()},
+	})
+	if err != nil {
+		t.Fatalf("marshal jwks: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(jwksPayload)
+	}))
+	defer server.Close()
+
+	authenticator, err := NewKeycloakAuthenticator(context.Background(), Config{
+		Enabled:  true,
+		Issuer:   "http://keycloak.local/realms/ipam",
+		JWKSURL:  server.URL,
+		Audience: "ipam-api",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if authenticator == nil {
+		t.Fatal("expected authenticator")
+	}
+}
+
+func TestNewKeycloakAuthenticatorUsesDefaultJWKSURL(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	jwk, err := jwkset.NewJWKFromKey(&privateKey.PublicKey, jwkset.JWKOptions{})
+	if err != nil {
+		t.Fatalf("create jwk: %v", err)
+	}
+
+	jwksPayload, err := json.Marshal(jwkset.JWKSMarshal{
+		Keys: []jwkset.JWKMarshal{jwk.Marshal()},
+	})
+	if err != nil {
+		t.Fatalf("marshal jwks: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/realms/ipam/protocol/openid-connect/certs" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(jwksPayload)
+	}))
+	defer server.Close()
+
+	authenticator, err := NewKeycloakAuthenticator(context.Background(), Config{
+		Enabled:  true,
+		Issuer:   server.URL + "/realms/ipam",
+		Audience: "ipam-api",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if authenticator == nil {
+		t.Fatal("expected authenticator")
+	}
+}
+
+func TestNewKeycloakAuthenticatorStillReturnsAuthenticatorWhenJWKSBodyIsInvalid(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"keys":[`))
+	}))
+	defer server.Close()
+
+	authenticator, err := NewKeycloakAuthenticator(context.Background(), Config{
+		Enabled:  true,
+		Issuer:   "http://keycloak.local/realms/ipam",
+		JWKSURL:  server.URL,
+		Audience: "ipam-api",
+	})
+	if err != nil {
+		t.Fatalf("expected no immediate error, got %v", err)
+	}
+	if authenticator == nil {
+		t.Fatal("expected authenticator even when background JWKS refresh logs an error")
 	}
 }

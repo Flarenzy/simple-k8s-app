@@ -10,8 +10,13 @@ LOCAL_KEYCLOAK_CLIENT_ID := ipam-fe
 LOCAL_KEYCLOAK_ISSUER := $(LOCAL_KEYCLOAK_URL)/realms/$(LOCAL_KEYCLOAK_REALM)
 LOCAL_KEYCLOAK_AUDIENCE := ipam-api
 LOCAL_KEYCLOAK_JWKS_URL := $(LOCAL_KEYCLOAK_ISSUER)/protocol/openid-connect/certs
+FUZZ_TIME ?= 3s
+FUZZ_TARGETS := \
+	./internal/http:FuzzParsePathInt64 \
+	./internal/http:FuzzParseIPAddressID \
+	./internal/domain:FuzzValidateIPInSubnet
 
-.PHONY: docs format run run-api test-integration
+.PHONY: docs format run run-api test test-integration test-fuzz test-all
 
 ## ------------------------------
 ## App commands
@@ -42,8 +47,21 @@ docs:
 format:
 	gofmt -w $(GO_FILES)
 
+test:
+	go test ./...
+
 test-integration:
 	go test -tags=integration ./integration/api/...
+
+test-fuzz:
+	@for target in $(FUZZ_TARGETS); do \
+		pkg="$${target%%:*}"; \
+		name="$${target##*:}"; \
+		echo "Fuzzing $$name in $$pkg for $(FUZZ_TIME)..."; \
+		go test -run=^$$ -fuzz="^$${name}$$" -fuzztime=$(FUZZ_TIME) "$$pkg" || exit $$?; \
+	done
+
+test-all: test test-integration test-fuzz
 
 docker-api:
 	docker build -f deploy/docker/Dockerfile.api -t $(APP_NAME)-api:latest .

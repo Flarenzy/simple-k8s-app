@@ -234,3 +234,130 @@ func TestCreateIPAllowsSlash31EndpointAddress(t *testing.T) {
 		t.Fatal("expected repository create to be called")
 	}
 }
+
+func TestListIPsReturnsSubnetSpecificNotFound(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{}, ErrNotFound
+			},
+		},
+		stubIPRepository{},
+	)
+
+	_, err := svc.ListIPs(context.Background(), 1)
+	if !errors.Is(err, ErrSubnetNotFound) {
+		t.Fatalf("expected ErrSubnetNotFound, got %v", err)
+	}
+}
+
+func TestListIPsReturnsRepositoryError(t *testing.T) {
+	repoErr := errors.New("list failed")
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{ID: 1}, nil
+			},
+		},
+		stubIPRepository{
+			listFn: func(context.Context, int64) ([]IPAddress, error) {
+				return nil, repoErr
+			},
+		},
+	)
+
+	_, err := svc.ListIPs(context.Background(), 1)
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("expected repo error, got %v", err)
+	}
+}
+
+func TestUpdateIPHostnameReturnsSubnetSpecificNotFound(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{}, ErrNotFound
+			},
+		},
+		stubIPRepository{},
+	)
+
+	_, err := svc.UpdateIPHostname(context.Background(), 1, IPAddressID("ip-1"), UpdateIPInput{Hostname: "host"})
+	if !errors.Is(err, ErrSubnetNotFound) {
+		t.Fatalf("expected ErrSubnetNotFound, got %v", err)
+	}
+}
+
+func TestUpdateIPHostnameReturnsRepositoryError(t *testing.T) {
+	repoErr := errors.New("update failed")
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			findFn: func(context.Context, int64) (Subnet, error) {
+				return Subnet{ID: 1}, nil
+			},
+		},
+		stubIPRepository{
+			findFn: func(context.Context, IPAddressID, int64) (IPAddress, error) {
+				return IPAddress{ID: IPAddressID("ip-1")}, nil
+			},
+			updateFn: func(context.Context, IPAddressID, UpdateIPInput) (IPAddress, error) {
+				return IPAddress{}, repoErr
+			},
+		},
+	)
+
+	_, err := svc.UpdateIPHostname(context.Background(), 1, IPAddressID("ip-1"), UpdateIPInput{Hostname: "host"})
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("expected repo error, got %v", err)
+	}
+}
+
+func TestDeleteIPReturnsNotFoundWhenRepositoryReportsNoDelete(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{},
+		stubIPRepository{
+			deleteFn: func(context.Context, IPAddressID, int64) (bool, error) {
+				return false, nil
+			},
+		},
+	)
+
+	err := svc.DeleteIP(context.Background(), 1, IPAddressID("ip-1"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestDeleteIPReturnsRepositoryError(t *testing.T) {
+	repoErr := errors.New("delete failed")
+	svc := NewNetworkService(
+		stubSubnetRepository{},
+		stubIPRepository{
+			deleteFn: func(context.Context, IPAddressID, int64) (bool, error) {
+				return false, repoErr
+			},
+		},
+	)
+
+	err := svc.DeleteIP(context.Background(), 1, IPAddressID("ip-1"))
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("expected repo error, got %v", err)
+	}
+}
+
+func TestDeleteSubnetReturnsRepositoryError(t *testing.T) {
+	repoErr := errors.New("delete failed")
+	svc := NewNetworkService(
+		stubSubnetRepository{
+			deleteFn: func(context.Context, int64) (bool, error) {
+				return false, repoErr
+			},
+		},
+		stubIPRepository{},
+	)
+
+	err := svc.DeleteSubnet(context.Background(), 1)
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("expected repo error, got %v", err)
+	}
+}
