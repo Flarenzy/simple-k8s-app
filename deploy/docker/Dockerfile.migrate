@@ -9,7 +9,12 @@ RUN apk add --no-cache ca-certificates git
 RUN mkdir -p /out \
     && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go install github.com/pressly/goose/v3/cmd/goose@latest \
-    && cp "$(go env GOPATH)/bin/goose" /out/goose
+    && goose_path="$(go env GOPATH)/bin/goose" \
+    && if [ ! -x "$goose_path" ]; then \
+         goose_path="$(go env GOPATH)/bin/${TARGETOS:-linux}_${TARGETARCH:-$(go env GOARCH)}/goose"; \
+       fi \
+    && test -x "$goose_path" \
+    && cp "$goose_path" /out/goose
 
 FROM alpine:3.23 AS runner
 
