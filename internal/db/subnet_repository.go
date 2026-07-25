@@ -68,6 +68,7 @@ func toDomainSubnet(subnet sqlc.Subnet) domain.Subnet {
 	return domain.Subnet{
 		ID:          subnet.ID,
 		CIDR:        subnet.Cidr,
+		SiteID:      subnet.SiteID.Bytes,
 		Description: subnet.Description,
 		CreatedAt:   subnet.CreatedAt.Time,
 		UpdatedAt:   subnet.UpdatedAt.Time,

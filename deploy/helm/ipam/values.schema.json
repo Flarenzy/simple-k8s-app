@@ -140,6 +140,9 @@
           "properties": {
             "PORT": {
               "type": "string"
+            },
+            "CORS_ALLOWED_ORIGINS": {
+              "type": "string"
             }
           }
         }
@@ -568,17 +571,26 @@
             "additionalProperties": true
           }
         },
-        "hostnames": {
-          "type": "array",
-          "items": {
-            "type": "string"
+        "frontend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hostnames": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "path": { "type": "string" }
           }
         },
-        "rules": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hostnames": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "path": { "type": "string" }
           }
         }
       }

@@ -38,6 +38,8 @@ api:
     periodSeconds: 5
   env:
     PORT: "4040"
+    # Comma-separated browser origins allowed to call the API.
+    CORS_ALLOWED_ORIGINS: ""
 
 fe:
   replicaCount: 1
@@ -208,15 +210,15 @@ httpRoute:
   - name: gateway
     sectionName: http
     # namespace: default
-  # Hostnames matching HTTP header.
-  hostnames:
-  - chart-example.local
-  # List of rules and filters applied.
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /headers
+  # Routes attach to kiac's ready-to-use Gateway named gateway.
+  frontend:
+    hostnames:
+      - simplek8sapp.lan
+    path: /
+  api:
+    hostnames:
+      - api.simplek8sapp.lan
+    path: /
   #   filters:
   #   - type: RequestHeaderModifier
   #     requestHeaderModifier:

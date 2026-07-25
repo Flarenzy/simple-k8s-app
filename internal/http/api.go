@@ -15,18 +15,24 @@ type HealthChecker interface {
 }
 
 type API struct {
-	Logger        *slog.Logger
-	Health        HealthChecker
-	Service       domain.NetworkService
-	Authenticator apiauth.Authenticator
+	Logger             *slog.Logger
+	Health             HealthChecker
+	Service            domain.NetworkService
+	Authenticator      apiauth.Authenticator
+	CORSAllowedOrigins []string
 }
 
 func NewAPI(logger *slog.Logger, health HealthChecker, svc domain.NetworkService, authenticator apiauth.Authenticator) *API {
+	return NewAPIWithCORS(logger, health, svc, authenticator, nil)
+}
+
+func NewAPIWithCORS(logger *slog.Logger, health HealthChecker, svc domain.NetworkService, authenticator apiauth.Authenticator, corsAllowedOrigins []string) *API {
 	return &API{
-		Logger:        logger,
-		Health:        health,
-		Service:       svc,
-		Authenticator: authenticator,
+		Logger:             logger,
+		Health:             health,
+		Service:            svc,
+		Authenticator:      authenticator,
+		CORSAllowedOrigins: corsAllowedOrigins,
 	}
 }
 
@@ -48,5 +54,5 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}/ips/{uuid}", a.handleDeleteIPByUUIDandSubnetID)
 
-	return a.authMiddleware(mux)
+	return a.corsMiddleware(a.authMiddleware(mux))
 }

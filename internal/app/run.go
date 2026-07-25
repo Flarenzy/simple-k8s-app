@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	apiauth "github.com/Flarenzy/simple-k8s-app/internal/auth"
@@ -19,14 +20,25 @@ import (
 )
 
 type Config struct {
-	Port         string
-	DSN          string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	AuthEnabled  bool
-	Issuer       string
-	Audience     string
-	JWKSURL      string
+	Port               string
+	DSN                string
+	ReadTimeout        time.Duration
+	WriteTimeout       time.Duration
+	AuthEnabled        bool
+	Issuer             string
+	Audience           string
+	JWKSURL            string
+	CORSAllowedOrigins []string
+}
+
+func parseCSV(value string) []string {
+	var entries []string
+	for _, entry := range strings.Split(value, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 var (
@@ -36,14 +48,15 @@ var (
 
 func LoadConfig() Config {
 	cfg := Config{
-		DSN:          os.Getenv("DB_CONN"),
-		Port:         os.Getenv("PORT"),
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		AuthEnabled:  os.Getenv("AUTH_ENABLED") == "true",
-		Issuer:       os.Getenv("KEYCLOAK_ISSUER"),
-		Audience:     os.Getenv("KEYCLOAK_AUDIENCE"),
-		JWKSURL:      os.Getenv("KEYCLOAK_JWKS_URL"),
+		DSN:                os.Getenv("DB_CONN"),
+		Port:               os.Getenv("PORT"),
+		ReadTimeout:        3 * time.Second,
+		WriteTimeout:       3 * time.Second,
+		AuthEnabled:        os.Getenv("AUTH_ENABLED") == "true",
+		Issuer:             os.Getenv("KEYCLOAK_ISSUER"),
+		Audience:           os.Getenv("KEYCLOAK_AUDIENCE"),
+		JWKSURL:            os.Getenv("KEYCLOAK_JWKS_URL"),
+		CORSAllowedOrigins: parseCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 
 	if cfg.DSN == "" {
@@ -89,7 +102,7 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 		return fmt.Errorf("initialize authenticator: %w", err)
 	}
 
-	api := apihttp.NewAPI(logger, pool, networkService, authenticator)
+	api := apihttp.NewAPIWithCORS(logger, pool, networkService, authenticator, cfg.CORSAllowedOrigins)
 
 	server := &http.Server{
 		Addr:         listener.Addr().String(),

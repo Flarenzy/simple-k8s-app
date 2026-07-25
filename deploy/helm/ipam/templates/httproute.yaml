@@ -1,38 +1,44 @@
 {{- if .Values.httpRoute.enabled -}}
 {{- $fullName := include "ipam.fullname" . -}}
-{{- $svcPort := .Values.service.port -}}
+{{- $apiName := include "ipam.apiFullname" . -}}
+{{- $feName := include "ipam.feFullname" . -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: {{ $fullName }}
+  name: {{ $fullName }}-fe
   labels:
     {{- include "ipam.labels" . | nindent 4 }}
-  {{- with .Values.httpRoute.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
 spec:
   parentRefs:
-    {{- with .Values.httpRoute.parentRefs }}
-      {{- toYaml . | nindent 4 }}
-    {{- end }}
-  {{- with .Values.httpRoute.hostnames }}
+    {{- toYaml .Values.httpRoute.parentRefs | nindent 4 }}
   hostnames:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- toYaml .Values.httpRoute.frontend.hostnames | nindent 4 }}
   rules:
-    {{- range .Values.httpRoute.rules }}
-    {{- with .matches }}
     - matches:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .filters }}
-      filters:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
+        - path:
+            type: PathPrefix
+            value: {{ .Values.httpRoute.frontend.path | quote }}
       backendRefs:
-        - name: {{ $fullName }}
-          port: {{ $svcPort }}
-          weight: 1
-    {{- end }}
+        - name: {{ $feName }}
+          port: {{ .Values.fe.service.port }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}-api
+  labels:
+    {{- include "ipam.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- toYaml .Values.httpRoute.parentRefs | nindent 4 }}
+  hostnames:
+    {{- toYaml .Values.httpRoute.api.hostnames | nindent 4 }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.httpRoute.api.path | quote }}
+      backendRefs:
+        - name: {{ $apiName }}
+          port: {{ .Values.api.service.port }}
 {{- end }}

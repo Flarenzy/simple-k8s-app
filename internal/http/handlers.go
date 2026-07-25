@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -119,14 +120,8 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/subnets/{id} [get]
 func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parsePathInt64(r, "id")
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
-		}
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
 		return
 	}
 
@@ -165,14 +160,8 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/subnets/{id}/ips [post]
 func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parsePathInt64(r, "id")
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
 		return
 	}
 
@@ -244,14 +233,8 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/subnets/{id}/ips [get]
 func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parsePathInt64(r, "id")
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
 		return
 	}
 
@@ -291,14 +274,8 @@ func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/subnets/{id}/ips/{uuid} [patch]
 func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parsePathInt64(r, "id")
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
 		return
 	}
 
@@ -365,14 +342,8 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/subnets/{id}/ips/{uuid} [delete]
 func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parsePathInt64(r, "id")
-	if err != nil {
-		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
-		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
-		if err != nil {
-			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
-		}
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
 		return
 	}
 
@@ -414,6 +385,20 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 
 	w.WriteHeader(http.StatusNoContent)
 
+}
+
+func parseID(w http.ResponseWriter, r *http.Request, a *API) (context.Context, int64, error, bool) {
+	ctx := r.Context()
+	id, err := parsePathInt64(r, "id")
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unable to convert string id to int64", "err", err.Error())
+		err = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		if err != nil {
+			a.Logger.ErrorContext(ctx, "cant respond to client", "err", err.Error())
+		}
+		return nil, 0, nil, true
+	}
+	return ctx, id, err, false
 }
 
 // @Summary Delete subnet

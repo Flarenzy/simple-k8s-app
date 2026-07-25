@@ -8,21 +8,24 @@ package db
 import (
 	"context"
 	"net/netip"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createSubnet = `-- name: CreateSubnet :one
-INSERT INTO subnets (cidr, description)
-VALUES ($1, $2)
-RETURNING id, cidr, description, created_at, updated_at
+INSERT INTO subnets (cidr, site_id, description)
+VALUES ($1, $2, $3)
+RETURNING id, cidr, description, created_at, updated_at, site_id
 `
 
 type CreateSubnetParams struct {
 	Cidr        netip.Prefix `json:"cidr"`
+	SiteID      pgtype.UUID  `json:"site_id"`
 	Description string       `json:"description"`
 }
 
 func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Subnet, error) {
-	row := q.db.QueryRow(ctx, createSubnet, arg.Cidr, arg.Description)
+	row := q.db.QueryRow(ctx, createSubnet, arg.Cidr, arg.SiteID, arg.Description)
 	var i Subnet
 	err := row.Scan(
 		&i.ID,
@@ -30,6 +33,7 @@ func (q *Queries) CreateSubnet(ctx context.Context, arg CreateSubnetParams) (Sub
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SiteID,
 	)
 	return i, err
 }
@@ -38,7 +42,7 @@ const deleteSubnetByID = `-- name: DeleteSubnetByID :one
 WITH deleted_rows AS (
     DELETE FROM subnets
     WHERE id = $1
-    RETURNING id, cidr, description, created_at, updated_at
+    RETURNING id, cidr, description, created_at, updated_at, site_id
 )
 SELECT count(*) FROM deleted_rows
 `
@@ -51,7 +55,7 @@ func (q *Queries) DeleteSubnetByID(ctx context.Context, id int64) (int64, error)
 }
 
 const getSubnetByID = `-- name: GetSubnetByID :one
-SELECT id, cidr, description, created_at, updated_at
+SELECT id, cidr, description, created_at, updated_at, site_id
 FROM subnets
 WHERE id = $1
 `
@@ -65,12 +69,13 @@ func (q *Queries) GetSubnetByID(ctx context.Context, id int64) (Subnet, error) {
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SiteID,
 	)
 	return i, err
 }
 
 const listSubnets = `-- name: ListSubnets :many
-SELECT id, cidr, description, created_at, updated_at
+SELECT id, cidr, description, created_at, updated_at, site_id
 FROM subnets
 ORDER BY id
 `
@@ -90,6 +95,7 @@ func (q *Queries) ListSubnets(ctx context.Context) ([]Subnet, error) {
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SiteID,
 		); err != nil {
 			return nil, err
 		}

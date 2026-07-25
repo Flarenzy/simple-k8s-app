@@ -2,13 +2,13 @@ FROM --platform=$BUILDPLATFORM golang:1.26.0-alpine3.23 AS builder
 
 WORKDIR /opt/app
 ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
+ARG TARGETARCH
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -o /opt/app/bin/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    go build -o /opt/app/bin/api ./cmd/api
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /opt/app

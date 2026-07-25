@@ -19,10 +19,19 @@ type IpAddress struct {
 	SubnetID  int64              `json:"subnet_id"`
 }
 
+type Site struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Subnet struct {
 	ID          int64              `json:"id"`
 	Cidr        netip.Prefix       `json:"cidr"`
 	Description string             `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	SiteID      pgtype.UUID        `json:"site_id"`
 }
