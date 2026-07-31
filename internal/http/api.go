@@ -19,6 +19,7 @@ type API struct {
 	Health             HealthChecker
 	NetService         domain.NetworkService
 	SitesService       domain.SitesService
+	ImportService      domain.ImportService
 	Authenticator      apiauth.Authenticator
 	CORSAllowedOrigins []string
 }
@@ -60,6 +61,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}", a.handleUpdateSubnet)
+	mux.HandleFunc("PATCH /api/v1/subnets/{id}/site", a.handleAssignSubnetSite)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}", a.handleDeleteSubnetByID)
 	mux.HandleFunc("GET /api/v1/sites", a.handleGetAllSites)
 	mux.HandleFunc("POST /api/v1/sites", a.handleCreateSite)
@@ -67,6 +69,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/sites/{id}", a.handleGetSiteByID)
 	mux.HandleFunc("PATCH /api/v1/sites/{id}", a.handleUpdateSite)
 	mux.HandleFunc("DELETE /api/v1/sites/{id}", a.handleDeleteSiteByID)
+	mux.HandleFunc("POST /api/v1/import/csv", a.handleImportCSV)
 	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
 	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)

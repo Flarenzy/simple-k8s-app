@@ -201,7 +201,7 @@ func TestSubnetRepositoryListMapsRowsToDomain(t *testing.T) {
 		queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
 			return &stubRows{
 				rows: [][]any{
-					{int64(7), mustPrefix(t, "10.0.0.0/24"), "office", now, now, pgtype.UUID{Bytes: [16]byte{}, Valid: true}},
+					{int64(7), mustPrefix(t, "10.0.0.0/24"), "office", now, now, pgtype.UUID{Bytes: [16]byte{}, Valid: true}, int64(0)},
 				},
 			}, nil
 		},

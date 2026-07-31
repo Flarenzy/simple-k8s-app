@@ -19,6 +19,11 @@ type UpdateSubnetInput struct {
 	Description string
 }
 
+type AssignSubnetSiteInput struct {
+	ID     int64
+	SiteID uuid.UUID
+}
+
 type CreateIPInput struct {
 	IP       string
 	Hostname string

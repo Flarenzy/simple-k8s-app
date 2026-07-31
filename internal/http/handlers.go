@@ -9,6 +9,57 @@ import (
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 )
 
+const maxCSVMultipartOverhead int64 = 1 << 20
+
+// @Summary Import sites, subnets, and IP metadata
+// @Tags import
+// @Security BearerAuth
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "CSV file with site,cidr,ip,description columns"
+// @Success 200 {object} ImportResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/import/csv [post]
+func (a *API) handleImportCSV(w http.ResponseWriter, r *http.Request) {
+	if a.ImportService == nil {
+		_ = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "import service unavailable"})
+		return
+	}
+	maxRequestBytes := domain.MaxCSVImportBytes + maxCSVMultipartOverhead
+	if r.ContentLength > maxRequestBytes {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "csv file exceeds maximum size"})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "multipart file is required"})
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "multipart file is required"})
+		return
+	}
+	defer file.Close()
+	if header.Size > domain.MaxCSVImportBytes {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "csv file exceeds maximum size"})
+		return
+	}
+	result, err := a.ImportService.ImportCSV(r.Context(), file)
+	if err != nil {
+		status := http.StatusInternalServerError
+		response := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrInvalidInput) {
+			status = http.StatusBadRequest
+			response = ErrorResponse{Error: err.Error()}
+		}
+		_ = encode(w, r, status, response)
+		return
+	}
+	_ = encode(w, r, http.StatusOK, importResultToResponse(result))
+}
+
 // @Summary Health check
 // @Tags health
 // @Success 200 {string} string "ok"
@@ -86,6 +137,10 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if subnetReq.SiteID == nil {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "site_id is required"})
+		return
+	}
 
 	respSubnet, err := a.NetService.CreateSubnet(ctx, subnetReq.toInput())
 	if err != nil {
@@ -94,6 +149,9 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, domain.ErrInvalidInput) {
 			status = http.StatusBadRequest
 			resp = ErrorResponse{Error: "invalid cidr"}
+		} else if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			resp = ErrorResponse{Error: "site not found"}
 		}
 
 		a.Logger.ErrorContext(ctx, "creating subnet", "err", err.Error(), "cidr", subnetReq.CIDR)
@@ -107,6 +165,47 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 	}
+}
+
+// @Summary Assign subnet to site
+// @Tags subnets
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "Subnet ID"
+// @Param site body AssignSubnetSiteRequest true "Site assignment"
+// @Success 200 {object} SubnetResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id}/site [patch]
+func (a *API) handleAssignSubnetSite(w http.ResponseWriter, r *http.Request) {
+	ctx, id, _, done := parseID(w, r, a)
+	if done {
+		return
+	}
+	request, err := decode[AssignSubnetSiteRequest](r)
+	defer r.Body.Close()
+	if err != nil || request.SiteID == nil {
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "site_id is required"})
+		return
+	}
+
+	subnet, err := a.NetService.AssignSubnetSite(ctx, domain.AssignSubnetSiteInput{ID: id, SiteID: *request.SiteID})
+	if err != nil {
+		status := http.StatusInternalServerError
+		response := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrInvalidInput) {
+			status = http.StatusBadRequest
+			response = ErrorResponse{Error: "bad request"}
+		} else if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			response = ErrorResponse{Error: "subnet or site not found"}
+		}
+		_ = encode(w, r, status, response)
+		return
+	}
+	_ = encode(w, r, http.StatusOK, subnetToResponse(subnet))
 }
 
 // @Summary Get subnet by ID

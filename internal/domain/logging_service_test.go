@@ -38,6 +38,7 @@ type stubNetworkService struct {
 	listSubnetsFn      func(context.Context) ([]Subnet, error)
 	createSubnetFn     func(context.Context, CreateSubnetInput) (Subnet, error)
 	updateSubnetFn     func(context.Context, UpdateSubnetInput) (Subnet, error)
+	assignSubnetSiteFn func(context.Context, AssignSubnetSiteInput) (Subnet, error)
 	getSubnetFn        func(context.Context, int64) (Subnet, error)
 	deleteSubnetFn     func(context.Context, int64) error
 	listIPsFn          func(context.Context, int64) ([]IPAddress, error)
@@ -65,6 +66,13 @@ func (s stubNetworkService) UpdateSubnet(ctx context.Context, input UpdateSubnet
 		return Subnet{}, nil
 	}
 	return s.updateSubnetFn(ctx, input)
+}
+
+func (s stubNetworkService) AssignSubnetSite(ctx context.Context, input AssignSubnetSiteInput) (Subnet, error) {
+	if s.assignSubnetSiteFn == nil {
+		return Subnet{}, nil
+	}
+	return s.assignSubnetSiteFn(ctx, input)
 }
 
 func (s stubNetworkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {

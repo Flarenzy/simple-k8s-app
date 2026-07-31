@@ -12,6 +12,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assignSubnetSite = `-- name: AssignSubnetSite :one
+UPDATE subnets
+SET site_id = $2, updated_at = now() AT TIME ZONE 'UTC'
+WHERE id = $1
+RETURNING id, cidr, description, created_at, updated_at, site_id
+`
+
+type AssignSubnetSiteParams struct {
+	ID     int64       `json:"id"`
+	SiteID pgtype.UUID `json:"site_id"`
+}
+
+func (q *Queries) AssignSubnetSite(ctx context.Context, arg AssignSubnetSiteParams) (Subnet, error) {
+	row := q.db.QueryRow(ctx, assignSubnetSite, arg.ID, arg.SiteID)
+	var i Subnet
+	err := row.Scan(
+		&i.ID,
+		&i.Cidr,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SiteID,
+	)
+	return i, err
+}
+
 const createSubnet = `-- name: CreateSubnet :one
 INSERT INTO subnets (cidr, site_id, description)
 VALUES ($1, $2, $3)
@@ -55,14 +81,25 @@ func (q *Queries) DeleteSubnetByID(ctx context.Context, id int64) (int64, error)
 }
 
 const getSubnetByID = `-- name: GetSubnetByID :one
-SELECT id, cidr, description, created_at, updated_at, site_id
+SELECT subnets.id, subnets.cidr, subnets.description, subnets.created_at, subnets.updated_at, subnets.site_id,
+       (SELECT COUNT(*) FROM ip_addresses WHERE subnet_id = subnets.id) AS used_ips
 FROM subnets
-WHERE id = $1
+WHERE subnets.id = $1
 `
 
-func (q *Queries) GetSubnetByID(ctx context.Context, id int64) (Subnet, error) {
+type GetSubnetByIDRow struct {
+	ID          int64              `json:"id"`
+	Cidr        netip.Prefix       `json:"cidr"`
+	Description string             `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	SiteID      pgtype.UUID        `json:"site_id"`
+	UsedIps     int64              `json:"used_ips"`
+}
+
+func (q *Queries) GetSubnetByID(ctx context.Context, id int64) (GetSubnetByIDRow, error) {
 	row := q.db.QueryRow(ctx, getSubnetByID, id)
-	var i Subnet
+	var i GetSubnetByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Cidr,
@@ -70,25 +107,37 @@ func (q *Queries) GetSubnetByID(ctx context.Context, id int64) (Subnet, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SiteID,
+		&i.UsedIps,
 	)
 	return i, err
 }
 
 const listSubnets = `-- name: ListSubnets :many
-SELECT id, cidr, description, created_at, updated_at, site_id
+SELECT subnets.id, subnets.cidr, subnets.description, subnets.created_at, subnets.updated_at, subnets.site_id,
+       (SELECT COUNT(*) FROM ip_addresses WHERE subnet_id = subnets.id) AS used_ips
 FROM subnets
-ORDER BY id
+ORDER BY subnets.id
 `
 
-func (q *Queries) ListSubnets(ctx context.Context) ([]Subnet, error) {
+type ListSubnetsRow struct {
+	ID          int64              `json:"id"`
+	Cidr        netip.Prefix       `json:"cidr"`
+	Description string             `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	SiteID      pgtype.UUID        `json:"site_id"`
+	UsedIps     int64              `json:"used_ips"`
+}
+
+func (q *Queries) ListSubnets(ctx context.Context) ([]ListSubnetsRow, error) {
 	rows, err := q.db.Query(ctx, listSubnets)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Subnet
+	var items []ListSubnetsRow
 	for rows.Next() {
-		var i Subnet
+		var i ListSubnetsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Cidr,
@@ -96,6 +145,7 @@ func (q *Queries) ListSubnets(ctx context.Context) ([]Subnet, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SiteID,
+			&i.UsedIps,
 		); err != nil {
 			return nil, err
 		}

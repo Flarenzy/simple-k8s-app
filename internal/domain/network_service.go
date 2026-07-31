@@ -6,52 +6,101 @@ import (
 	"fmt"
 	"net/netip"
 
+	"github.com/google/uuid"
 	"go4.org/netipx"
 )
 
 type networkService struct {
 	subnets SubnetRepository
 	ips     IPRepository
+	sites   SiteRepository
 }
 
-func NewNetworkService(subnets SubnetRepository, ips IPRepository) NetworkService {
-	return &networkService{
+func NewNetworkService(subnets SubnetRepository, ips IPRepository, sites ...SiteRepository) NetworkService {
+	service := &networkService{
 		subnets: subnets,
 		ips:     ips,
 	}
+	if len(sites) > 0 {
+		service.sites = sites[0]
+	}
+	return service
 }
 
 func (s *networkService) ListSubnets(ctx context.Context) ([]Subnet, error) {
-	return s.subnets.List(ctx)
+	subnets, err := s.subnets.List(ctx)
+	return enrichSubnets(subnets), err
 }
 
 func (s *networkService) CreateSubnet(ctx context.Context, input CreateSubnetInput) (Subnet, error) {
+	if input.SiteID == nil || *input.SiteID == uuid.Nil {
+		return Subnet{}, fmt.Errorf("%w: site is required", ErrInvalidInput)
+	}
+	if err := s.validateSite(ctx, *input.SiteID); err != nil {
+		return Subnet{}, err
+	}
 	cidr, err := netip.ParsePrefix(input.CIDR)
 	if err != nil {
 		return Subnet{}, fmt.Errorf("%w: invalid cidr", ErrInvalidInput)
 	}
-	return s.subnets.Create(ctx, CreateSubnetRecord{
+	subnet, err := s.subnets.Create(ctx, CreateSubnetRecord{
 		CIDR:        cidr,
 		SiteID:      input.SiteID,
 		Description: input.Description,
 	})
+	return enrichSubnet(subnet), err
+}
+
+func (s *networkService) AssignSubnetSite(ctx context.Context, input AssignSubnetSiteInput) (Subnet, error) {
+	if input.SiteID == uuid.Nil {
+		return Subnet{}, fmt.Errorf("%w: site is required", ErrInvalidInput)
+	}
+	if err := s.validateSite(ctx, input.SiteID); err != nil {
+		return Subnet{}, err
+	}
+	subnet, err := s.subnets.AssignSite(ctx, input.ID, input.SiteID)
+	if errors.Is(err, ErrNotFound) {
+		return Subnet{}, fmt.Errorf("%w: subnet not found", ErrNotFound)
+	}
+	return enrichSubnet(subnet), err
 }
 
 func (s *networkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {
-	return s.subnets.FindByID(ctx, id)
+	subnet, err := s.subnets.FindByID(ctx, id)
+	return enrichSubnet(subnet), err
 }
 
 func (s *networkService) UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error) {
+	if input.SiteID == nil || *input.SiteID == uuid.Nil {
+		return Subnet{}, fmt.Errorf("%w: site is required", ErrInvalidInput)
+	}
+	if err := s.validateSite(ctx, *input.SiteID); err != nil {
+		return Subnet{}, err
+	}
 	cidr, err := netip.ParsePrefix(input.CIDR)
 	if err != nil {
 		return Subnet{}, fmt.Errorf("%w: invalid cidr", ErrInvalidInput)
 	}
-	return s.subnets.Update(ctx, UpdateSubnetRecord{
+	subnet, err := s.subnets.Update(ctx, UpdateSubnetRecord{
 		ID:          input.ID,
 		CIDR:        cidr,
 		SiteID:      input.SiteID,
 		Description: input.Description,
 	})
+	return enrichSubnet(subnet), err
+}
+
+func (s *networkService) validateSite(ctx context.Context, siteID uuid.UUID) error {
+	if s.sites == nil {
+		return nil
+	}
+	if _, err := s.sites.FindByID(ctx, siteID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("%w: site not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *networkService) DeleteSubnet(ctx context.Context, id int64) error {
@@ -63,6 +112,23 @@ func (s *networkService) DeleteSubnet(ctx context.Context, id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func enrichSubnets(subnets []Subnet) []Subnet {
+	for i := range subnets {
+		subnets[i] = enrichSubnet(subnets[i])
+	}
+	return subnets
+}
+
+func enrichSubnet(subnet Subnet) Subnet {
+	if subnet.CIDR.IsValid() {
+		subnet.TotalIPCount = subnetCapacity(subnet.CIDR)
+		if subnet.TotalIPCount < subnet.UsedIPCount {
+			subnet.TotalIPCount = subnet.UsedIPCount
+		}
+	}
+	return subnet
 }
 
 func (s *networkService) ListIPs(ctx context.Context, subnetID int64) ([]IPAddress, error) {

@@ -11,6 +11,7 @@ type SubnetRepository interface {
 	FindByID(ctx context.Context, id int64) (Subnet, error)
 	Create(ctx context.Context, input CreateSubnetRecord) (Subnet, error)
 	Update(ctx context.Context, input UpdateSubnetRecord) (Subnet, error)
+	AssignSite(ctx context.Context, id int64, siteID uuid.UUID) (Subnet, error)
 	Delete(ctx context.Context, id int64) (bool, error)
 }
 

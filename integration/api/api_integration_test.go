@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -71,6 +72,17 @@ type ipResponse struct {
 	IP       string `json:"ip"`
 	Hostname string `json:"hostname"`
 	SubnetID int64  `json:"subnet_id"`
+}
+
+type importResponse struct {
+	Processed int `json:"processed"`
+	Created   int `json:"created"`
+	Updated   int `json:"updated"`
+	Failed    int `json:"failed"`
+	Errors    []struct {
+		Row     int    `json:"row"`
+		Message string `json:"message"`
+	} `json:"errors"`
 }
 
 type errorResponse struct {
@@ -309,6 +321,17 @@ func TestSitesCRUDAndStatistics(t *testing.T) {
 func TestCustomerJourney(t *testing.T) {
 	s := mustSuite(t)
 	token := s.mustToken(t)
+	createSiteResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", token, map[string]any{
+		"name": "Customer journey site",
+	})
+	if err != nil {
+		t.Fatalf("create journey site: %v", err)
+	}
+	if createSiteResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 creating journey site, got %d: %s", createSiteResp.StatusCode, s.readBody(t, createSiteResp))
+	}
+	var journeySite siteResponse
+	s.decodeJSON(t, createSiteResp, &journeySite)
 
 	createSubnetResp, err := s.jsonRequest(
 		t,
@@ -317,6 +340,7 @@ func TestCustomerJourney(t *testing.T) {
 		token,
 		map[string]any{
 			"cidr":        "10.42.0.0/24",
+			"site_id":     journeySite.ID,
 			"description": "Integration subnet",
 		},
 	)
@@ -475,6 +499,108 @@ func TestCustomerJourney(t *testing.T) {
 		t.Fatalf("expected 204 deleting subnet, got %d", deleteSubnetResp.StatusCode)
 	}
 	s.closeBody(t, deleteSubnetResp)
+
+	deleteSiteResp, err := s.request(t, http.MethodDelete, "/api/v1/sites/"+journeySite.ID, token, nil)
+	if err != nil {
+		t.Fatalf("delete journey site: %v", err)
+	}
+	if deleteSiteResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 deleting journey site, got %d", deleteSiteResp.StatusCode)
+	}
+	s.closeBody(t, deleteSiteResp)
+}
+
+func TestCSVImportJourney(t *testing.T) {
+	s := mustSuite(t)
+	token := s.mustToken(t)
+	siteName := "CSV integration site"
+	cidr := "10.77.0.0/24"
+	firstCSV := "site,cidr,ip,description\n" +
+		siteName + "," + cidr + ",10.77.0.10,printer\n" +
+		siteName + "," + cidr + ",10.77.0.11,phone\n"
+
+	resp, err := s.csvRequest(t, token, firstCSV)
+	if err != nil {
+		t.Fatalf("initial csv import: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from initial csv import, got %d: %s", resp.StatusCode, s.readBody(t, resp))
+	}
+	var result importResponse
+	s.decodeJSON(t, resp, &result)
+	if result.Processed != 2 || result.Created != 2 || result.Updated != 0 || result.Failed != 0 {
+		t.Fatalf("unexpected initial import result: %+v", result)
+	}
+
+	secondCSV := "site,cidr,ip,description\n" +
+		siteName + "," + cidr + ",10.77.0.10,updated-printer\n" +
+		siteName + "," + cidr + ",10.77.0.11,phone\n"
+	resp, err = s.csvRequest(t, token, secondCSV)
+	if err != nil {
+		t.Fatalf("idempotent csv import: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from repeat csv import, got %d: %s", resp.StatusCode, s.readBody(t, resp))
+	}
+	s.decodeJSON(t, resp, &result)
+	if result.Processed != 2 || result.Created != 0 || result.Updated != 1 || result.Failed != 0 {
+		t.Fatalf("unexpected repeat import result: %+v", result)
+	}
+
+	resp, err = s.csvRequest(t, token, "site,cidr,ip,description\n"+siteName+",not-a-cidr,10.77.0.12,bad\n")
+	if err != nil {
+		t.Fatalf("invalid csv import: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for row-level csv error, got %d: %s", resp.StatusCode, s.readBody(t, resp))
+	}
+	s.decodeJSON(t, resp, &result)
+	if result.Processed != 1 || result.Created != 0 || result.Updated != 0 || result.Failed != 1 || len(result.Errors) != 1 || result.Errors[0].Row != 2 {
+		t.Fatalf("unexpected invalid import result: %+v", result)
+	}
+
+	resp, err = s.get(t, "/api/v1/sites/statistics", token)
+	if err != nil {
+		t.Fatalf("read csv site statistics: %v", err)
+	}
+	var statistics []siteResponse
+	s.decodeJSON(t, resp, &statistics)
+	var found siteResponse
+	for _, item := range statistics {
+		if item.Name == siteName {
+			found = item
+			break
+		}
+	}
+	if found.ID == "" || found.SubnetCount != 1 || found.UsedIPCount != 2 || found.TotalIPCount != 254 {
+		t.Fatalf("unexpected persisted csv hierarchy statistics: %+v", found)
+	}
+
+	resp, err = s.get(t, "/api/v1/subnets", token)
+	if err != nil {
+		t.Fatalf("list csv subnets: %v", err)
+	}
+	var subnets []subnetResponse
+	s.decodeJSON(t, resp, &subnets)
+	var importedSubnet subnetResponse
+	for _, subnet := range subnets {
+		if subnet.CIDR == cidr {
+			importedSubnet = subnet
+			break
+		}
+	}
+	if importedSubnet.ID == 0 {
+		t.Fatalf("expected imported subnet %q in persisted inventory", cidr)
+	}
+	resp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", importedSubnet.ID), token)
+	if err != nil {
+		t.Fatalf("list imported ips: %v", err)
+	}
+	var ips []ipResponse
+	s.decodeJSON(t, resp, &ips)
+	if len(ips) != 2 {
+		t.Fatalf("expected 2 imported ips, got %d", len(ips))
+	}
 }
 
 func mustSuite(t *testing.T) *integrationSuite {
@@ -802,6 +928,29 @@ func (s *integrationSuite) jsonRequest(t *testing.T, method string, path string,
 	}
 
 	return s.request(t, method, path, token, bytes.NewReader(body))
+}
+
+func (s *integrationSuite) csvRequest(t *testing.T, token string, content string) (*http.Response, error) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "inventory.csv")
+	if err != nil {
+		return nil, err
+	}
+	if _, err = io.WriteString(part, content); err != nil {
+		return nil, err
+	}
+	if err = writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/api/v1/import/csv", &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return s.httpClient.Do(req)
 }
 
 func (s *integrationSuite) request(t *testing.T, method string, path string, token string, body io.Reader) (*http.Response, error) {

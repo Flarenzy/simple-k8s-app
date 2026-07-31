@@ -18,12 +18,12 @@ import (
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/sites [get]
 func (a *API) handleGetAllSites(w http.ResponseWriter, r *http.Request) {
-	sites, err := a.SitesService.List(r.Context())
+	statistics, err := a.SitesService.Statistics(r.Context())
 	if err != nil {
 		a.writeSiteError(w, r, http.StatusInternalServerError, "internal server error", "listing sites", err)
 		return
 	}
-	a.writeJSON(w, r, http.StatusOK, sitesToResponse(sites))
+	a.writeJSON(w, r, http.StatusOK, siteStatisticsToSiteResponses(statistics))
 }
 
 // @Summary Create site

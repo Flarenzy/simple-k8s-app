@@ -2,14 +2,20 @@ package domain
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/uuid"
 )
+
+type ImportService interface {
+	ImportCSV(ctx context.Context, input io.Reader) (ImportResult, error)
+}
 
 type NetworkService interface {
 	ListSubnets(ctx context.Context) ([]Subnet, error)
 	CreateSubnet(ctx context.Context, input CreateSubnetInput) (Subnet, error)
 	UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error)
+	AssignSubnetSite(ctx context.Context, input AssignSubnetSiteInput) (Subnet, error)
 	GetSubnet(ctx context.Context, id int64) (Subnet, error)
 	DeleteSubnet(ctx context.Context, id int64) error
 	ListIPs(ctx context.Context, subnetID int64) ([]IPAddress, error)

@@ -12,6 +12,8 @@ type SubnetResponse struct {
 	ID          int64      `json:"id" example:"1"`
 	CIDR        string     `json:"cidr" example:"10.0.0.0/24"`
 	SiteID      *uuid.UUID `json:"site_id,omitempty" example:"50e8400-e29b-41d4-a716-446655440000"`
+	UsedIPs     int64      `json:"used_ips"`
+	TotalIPs    int64      `json:"total_ips"`
 	Description string     `json:"description" example:"Office network"`
 	CreatedAt   time.Time  `json:"created_at" example:"2024-05-10T15:04:05Z"`
 	UpdatedAt   time.Time  `json:"updated_at" example:"2024-05-10T15:04:05Z"`
@@ -20,7 +22,7 @@ type SubnetResponse struct {
 // CreateSubnetRequest is the payload accepted when creating a subnet.
 type CreateSubnetRequest struct {
 	CIDR        string     `json:"cidr" example:"10.0.0.0/24" validate:"required"`
-	SiteID      *uuid.UUID `json:"site_id,omitempty" example:"50e8400-e29b-41d4-a716-446655440000"`
+	SiteID      *uuid.UUID `json:"site_id" example:"50e8400-e29b-41d4-a716-446655440000"`
 	Description string     `json:"description" example:"Office network"`
 }
 
@@ -35,6 +37,14 @@ type SiteResponse struct {
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	SubnetCount int64     `json:"subnet_count"`
+	UsedIPs     int64     `json:"used_ips"`
+	TotalIPs    int64     `json:"total_ips"`
+	FreeIPs     int64     `json:"free_ips"`
+}
+
+type AssignSubnetSiteRequest struct {
+	SiteID *uuid.UUID `json:"site_id"`
 }
 
 type SiteStatisticsResponse struct {
@@ -48,6 +58,19 @@ type SiteStatisticsResponse struct {
 // ErrorResponse is a simple envelope for error messages.
 type ErrorResponse struct {
 	Error string `json:"error" example:"subnet not found"`
+}
+
+type ImportResponse struct {
+	Processed int        `json:"processed"`
+	Created   int        `json:"created"`
+	Updated   int        `json:"updated"`
+	Failed    int        `json:"failed"`
+	Errors    []RowError `json:"errors"`
+}
+
+type RowError struct {
+	Row     int    `json:"row"`
+	Message string `json:"message"`
 }
 
 // IPResponse is a simplified view returned to clients and used in Swagger.
@@ -80,6 +103,8 @@ func subnetToResponse(s domain.Subnet) SubnetResponse {
 		ID:          s.ID,
 		CIDR:        s.CIDR.String(),
 		SiteID:      siteID,
+		UsedIPs:     s.UsedIPCount,
+		TotalIPs:    s.TotalIPCount,
 		Description: s.Description,
 		CreatedAt:   s.CreatedAt,
 		UpdatedAt:   s.UpdatedAt,
@@ -141,11 +166,29 @@ func sitesToResponse(sites []domain.Site) []SiteResponse {
 	return responses
 }
 
+func siteStatisticsToSiteResponses(statistics []domain.SiteStatistics) []SiteResponse {
+	responses := make([]SiteResponse, 0, len(statistics))
+	for _, statistic := range statistics {
+		responses = append(responses, SiteResponse{
+			ID: statistic.ID, Name: statistic.Name, Description: statistic.Description,
+			CreatedAt: statistic.CreatedAt, UpdatedAt: statistic.UpdatedAt,
+			SubnetCount: statistic.SubnetCount, UsedIPs: statistic.UsedIPCount,
+			TotalIPs: statistic.TotalIPCount, FreeIPs: statistic.FreeIPCount,
+		})
+	}
+	return responses
+}
+
 func siteStatisticsToResponse(statistics []domain.SiteStatistics) []SiteStatisticsResponse {
 	responses := make([]SiteStatisticsResponse, 0, len(statistics))
 	for _, statistic := range statistics {
 		responses = append(responses, SiteStatisticsResponse{
-			SiteResponse: siteToResponse(domain.Site{ID: statistic.ID, Name: statistic.Name, Description: statistic.Description, CreatedAt: statistic.CreatedAt, UpdatedAt: statistic.UpdatedAt}),
+			SiteResponse: SiteResponse{
+				ID: statistic.ID, Name: statistic.Name, Description: statistic.Description,
+				CreatedAt: statistic.CreatedAt, UpdatedAt: statistic.UpdatedAt,
+				SubnetCount: statistic.SubnetCount, UsedIPs: statistic.UsedIPCount,
+				TotalIPs: statistic.TotalIPCount, FreeIPs: statistic.FreeIPCount,
+			},
 			SubnetCount:  statistic.SubnetCount,
 			UsedIPCount:  statistic.UsedIPCount,
 			TotalIPCount: statistic.TotalIPCount,
@@ -166,4 +209,12 @@ func (r UpdateIPRequest) toInput() domain.UpdateIPInput {
 	return domain.UpdateIPInput{
 		Hostname: r.Hostname,
 	}
+}
+
+func importResultToResponse(result domain.ImportResult) ImportResponse {
+	errors := make([]RowError, 0, len(result.Errors))
+	for _, rowError := range result.Errors {
+		errors = append(errors, RowError{Row: rowError.Row, Message: rowError.Message})
+	}
+	return ImportResponse{Processed: result.Processed, Created: result.Created, Updated: result.Updated, Failed: result.Failed, Errors: errors}
 }

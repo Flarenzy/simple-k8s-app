@@ -48,6 +48,14 @@ func (s *loggingNetworkService) UpdateSubnet(ctx context.Context, input UpdateSu
 	return subnet, err
 }
 
+func (s *loggingNetworkService) AssignSubnetSite(ctx context.Context, input AssignSubnetSiteInput) (Subnet, error) {
+	subnet, err := s.next.AssignSubnetSite(ctx, input)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "assign subnet site failed", "id", input.ID, "err", err.Error())
+	}
+	return subnet, err
+}
+
 func (s *loggingNetworkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {
 	subnet, err := s.next.GetSubnet(ctx, id)
 	if err != nil {

@@ -97,7 +97,7 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
 	sitesRepo := appdb.NewSitesRepository(queries)
-	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkService(subnetRepo, ipRepo))
+	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkService(subnetRepo, ipRepo, sitesRepo))
 	sitesService := domain.NewSitesService(sitesRepo)
 	authenticator, err := newAuthenticator(ctx, cfg)
 	if err != nil {
@@ -105,6 +105,7 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	}
 
 	api := apihttp.NewAPIWithCORS(logger, pool, networkService, sitesService, authenticator, cfg.CORSAllowedOrigins)
+	api.ImportService = domain.NewCSVImportService(sitesService, networkService)
 
 	server := &http.Server{
 		Addr:         listener.Addr().String(),

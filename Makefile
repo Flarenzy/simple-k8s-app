@@ -14,7 +14,8 @@ FUZZ_TIME ?= 3s
 FUZZ_TARGETS := \
 	./internal/http:FuzzParsePathInt64 \
 	./internal/http:FuzzParseIPAddressID \
-	./internal/domain:FuzzValidateIPInSubnet
+	./internal/domain:FuzzValidateIPInSubnet \
+	./internal/domain:FuzzCSVImport
 
 .PHONY: docs format run run-api test test-integration test-fuzz test-all
 

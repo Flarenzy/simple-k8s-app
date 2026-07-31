@@ -10,12 +10,14 @@ import (
 type IPAddressID string
 
 type Subnet struct {
-	ID          int64
-	CIDR        netip.Prefix
-	SiteID      uuid.UUID
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           int64
+	CIDR         netip.Prefix
+	SiteID       uuid.UUID
+	UsedIPCount  int64
+	TotalIPCount int64
+	Description  string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type IPAddress struct {

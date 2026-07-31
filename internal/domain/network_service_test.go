@@ -5,14 +5,17 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 type stubSubnetRepository struct {
-	listFn   func(context.Context) ([]Subnet, error)
-	findFn   func(context.Context, int64) (Subnet, error)
-	createFn func(context.Context, CreateSubnetRecord) (Subnet, error)
-	updateFn func(context.Context, UpdateSubnetRecord) (Subnet, error)
-	deleteFn func(context.Context, int64) (bool, error)
+	listFn       func(context.Context) ([]Subnet, error)
+	findFn       func(context.Context, int64) (Subnet, error)
+	createFn     func(context.Context, CreateSubnetRecord) (Subnet, error)
+	updateFn     func(context.Context, UpdateSubnetRecord) (Subnet, error)
+	assignSiteFn func(context.Context, int64, uuid.UUID) (Subnet, error)
+	deleteFn     func(context.Context, int64) (bool, error)
 }
 
 func (s stubSubnetRepository) List(ctx context.Context) ([]Subnet, error) {
@@ -41,6 +44,13 @@ func (s stubSubnetRepository) Update(ctx context.Context, input UpdateSubnetReco
 		return Subnet{}, nil
 	}
 	return s.updateFn(ctx, input)
+}
+
+func (s stubSubnetRepository) AssignSite(ctx context.Context, id int64, siteID uuid.UUID) (Subnet, error) {
+	if s.assignSiteFn == nil {
+		return Subnet{}, nil
+	}
+	return s.assignSiteFn(ctx, id, siteID)
 }
 
 func (s stubSubnetRepository) Delete(ctx context.Context, id int64) (bool, error) {
@@ -99,6 +109,59 @@ func TestCreateSubnetRejectsInvalidCIDR(t *testing.T) {
 	_, err := svc.CreateSubnet(context.Background(), CreateSubnetInput{CIDR: "not-a-cidr"})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCreateSubnetRequiresSite(t *testing.T) {
+	svc := NewNetworkService(stubSubnetRepository{}, stubIPRepository{})
+
+	_, err := svc.CreateSubnet(context.Background(), CreateSubnetInput{CIDR: "10.0.0.0/24"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestAssignSubnetSiteValidatesSiteAndSubnet(t *testing.T) {
+	siteID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	svc := NewNetworkService(
+		stubSubnetRepository{assignSiteFn: func(_ context.Context, id int64, assigned uuid.UUID) (Subnet, error) {
+			return Subnet{ID: id, SiteID: assigned, CIDR: netip.MustParsePrefix("10.0.0.0/24")}, nil
+		}},
+		stubIPRepository{},
+		siteRepositoryStub{findFn: func(id uuid.UUID) (Site, error) {
+			if id != siteID {
+				return Site{}, ErrNotFound
+			}
+			return Site{ID: id}, nil
+		}},
+	)
+
+	subnet, err := svc.AssignSubnetSite(context.Background(), AssignSubnetSiteInput{ID: 7, SiteID: siteID})
+	if err != nil || subnet.SiteID != siteID {
+		t.Fatalf("expected assignment, got subnet=%+v err=%v", subnet, err)
+	}
+
+	_, err = svc.AssignSubnetSite(context.Background(), AssignSubnetSiteInput{ID: 7, SiteID: uuid.New()})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected unknown site to return ErrNotFound, got %v", err)
+	}
+}
+
+func TestUpdateSubnetRejectsUnknownSite(t *testing.T) {
+	siteID := uuid.New()
+	svc := NewNetworkService(
+		stubSubnetRepository{},
+		stubIPRepository{},
+		siteRepositoryStub{findFn: func(uuid.UUID) (Site, error) { return Site{}, ErrNotFound }},
+	)
+
+	_, err := svc.UpdateSubnet(context.Background(), UpdateSubnetInput{
+		ID:     7,
+		CIDR:   "10.0.0.0/24",
+		SiteID: &siteID,
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected unknown site to return ErrNotFound, got %v", err)
 	}
 }
 

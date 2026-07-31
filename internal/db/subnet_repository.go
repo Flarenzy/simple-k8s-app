@@ -27,7 +27,7 @@ func (r *SubnetRepository) List(ctx context.Context) ([]domain.Subnet, error) {
 
 	out := make([]domain.Subnet, 0, len(subnets))
 	for _, subnet := range subnets {
-		out = append(out, toDomainSubnet(subnet))
+		out = append(out, domain.Subnet{ID: subnet.ID, CIDR: subnet.Cidr, SiteID: subnet.SiteID.Bytes, UsedIPCount: subnet.UsedIps, Description: subnet.Description, CreatedAt: subnet.CreatedAt.Time, UpdatedAt: subnet.UpdatedAt.Time})
 	}
 
 	return out, nil
@@ -42,7 +42,7 @@ func (r *SubnetRepository) FindByID(ctx context.Context, id int64) (domain.Subne
 		return domain.Subnet{}, err
 	}
 
-	return toDomainSubnet(subnet), nil
+	return domain.Subnet{ID: subnet.ID, CIDR: subnet.Cidr, SiteID: subnet.SiteID.Bytes, UsedIPCount: subnet.UsedIps, Description: subnet.Description, CreatedAt: subnet.CreatedAt.Time, UpdatedAt: subnet.UpdatedAt.Time}, nil
 }
 
 func (r *SubnetRepository) Create(ctx context.Context, input domain.CreateSubnetRecord) (domain.Subnet, error) {
@@ -55,7 +55,21 @@ func (r *SubnetRepository) Create(ctx context.Context, input domain.CreateSubnet
 		return domain.Subnet{}, err
 	}
 
-	return toDomainSubnet(subnet), nil
+	return r.FindByID(ctx, subnet.ID)
+}
+
+func (r *SubnetRepository) AssignSite(ctx context.Context, id int64, siteID uuid.UUID) (domain.Subnet, error) {
+	subnet, err := r.queries.AssignSubnetSite(ctx, sqlc.AssignSubnetSiteParams{
+		ID:     id,
+		SiteID: siteIDParam(&siteID),
+	})
+	if err != nil {
+		if isNoRows(err) {
+			return domain.Subnet{}, domain.ErrNotFound
+		}
+		return domain.Subnet{}, err
+	}
+	return r.FindByID(ctx, subnet.ID)
 }
 
 func (r *SubnetRepository) Update(ctx context.Context, input domain.UpdateSubnetRecord) (domain.Subnet, error) {
@@ -71,7 +85,7 @@ func (r *SubnetRepository) Update(ctx context.Context, input domain.UpdateSubnet
 		}
 		return domain.Subnet{}, err
 	}
-	return toDomainSubnet(subnet), nil
+	return r.FindByID(ctx, subnet.ID)
 }
 
 func (r *SubnetRepository) Delete(ctx context.Context, id int64) (bool, error) {

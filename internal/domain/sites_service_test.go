@@ -12,13 +12,17 @@ import (
 type siteRepositoryStub struct {
 	sites      []Site
 	statistics []SubnetStatistics
+	findFn     func(uuid.UUID) (Site, error)
 }
 
 func (s siteRepositoryStub) List(context.Context) ([]Site, error) {
 	return s.sites, nil
 }
 
-func (siteRepositoryStub) FindByID(context.Context, uuid.UUID) (Site, error) {
+func (s siteRepositoryStub) FindByID(_ context.Context, id uuid.UUID) (Site, error) {
+	if s.findFn != nil {
+		return s.findFn(id)
+	}
 	return Site{}, nil
 }
 

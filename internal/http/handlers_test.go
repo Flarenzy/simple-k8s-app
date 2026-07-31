@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
+	"github.com/google/uuid"
 )
 
 type stubHealthChecker struct {
@@ -28,6 +29,7 @@ type stubService struct {
 	listSubnetsFn      func(context.Context) ([]domain.Subnet, error)
 	createSubnetFn     func(context.Context, domain.CreateSubnetInput) (domain.Subnet, error)
 	updateSubnetFn     func(context.Context, domain.UpdateSubnetInput) (domain.Subnet, error)
+	assignSubnetSiteFn func(context.Context, domain.AssignSubnetSiteInput) (domain.Subnet, error)
 	getSubnetFn        func(context.Context, int64) (domain.Subnet, error)
 	deleteSubnetFn     func(context.Context, int64) error
 	listIPsFn          func(context.Context, int64) ([]domain.IPAddress, error)
@@ -55,6 +57,13 @@ func (s stubService) UpdateSubnet(ctx context.Context, input domain.UpdateSubnet
 		return domain.Subnet{}, nil
 	}
 	return s.updateSubnetFn(ctx, input)
+}
+
+func (s stubService) AssignSubnetSite(ctx context.Context, input domain.AssignSubnetSiteInput) (domain.Subnet, error) {
+	if s.assignSubnetSiteFn == nil {
+		return domain.Subnet{}, nil
+	}
+	return s.assignSubnetSiteFn(ctx, input)
 }
 
 func (s stubService) GetSubnet(ctx context.Context, id int64) (domain.Subnet, error) {
@@ -309,7 +318,7 @@ func TestCreateSubnetReturnsBadRequestOnInvalidInput(t *testing.T) {
 		},
 	}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/subnets", strings.NewReader(`{"cidr":"bad"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subnets", strings.NewReader(`{"cidr":"bad","site_id":"11111111-1111-1111-1111-111111111111"}`))
 	rec := httptest.NewRecorder()
 	api.Router().ServeHTTP(rec, req)
 
@@ -337,7 +346,7 @@ func TestCreateSubnetCoversRequestAndErrorMapping(t *testing.T) {
 		},
 		{
 			name:       "internal error",
-			body:       `{"cidr":"10.0.0.0/24","description":"office"}`,
+			body:       `{"cidr":"10.0.0.0/24","site_id":"11111111-1111-1111-1111-111111111111","description":"office"}`,
 			serviceErr: errors.New("boom"),
 			wantStatus: http.StatusInternalServerError,
 			wantErr:    "internal server error while saving subnet to db",
@@ -375,7 +384,7 @@ func TestCreateSubnetReturnsCreatedPayload(t *testing.T) {
 		},
 	}, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/subnets", strings.NewReader(`{"cidr":"10.0.0.0/24","description":"office"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subnets", strings.NewReader(`{"cidr":"10.0.0.0/24","site_id":"11111111-1111-1111-1111-111111111111","description":"office"}`))
 	rec := httptest.NewRecorder()
 	api.Router().ServeHTTP(rec, req)
 
@@ -391,6 +400,52 @@ func TestCreateSubnetReturnsCreatedPayload(t *testing.T) {
 	if resp.ID != 42 || resp.CIDR != "10.0.0.0/24" || resp.Description != "office" {
 		t.Fatalf("unexpected create subnet payload: %+v", resp)
 	}
+}
+
+func TestCreateSubnetRequiresSiteID(t *testing.T) {
+	called := false
+	api := newHandlerTestAPI(stubService{
+		createSubnetFn: func(context.Context, domain.CreateSubnetInput) (domain.Subnet, error) {
+			called = true
+			return domain.Subnet{}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/subnets", strings.NewReader(`{"cidr":"10.0.0.0/24"}`))
+	rec := httptest.NewRecorder()
+	api.Router().ServeHTTP(rec, req)
+
+	assertJSONError(t, rec, http.StatusBadRequest, "site_id is required")
+	if called {
+		t.Fatal("expected missing site id to stop before service call")
+	}
+}
+
+func TestAssignSubnetSite(t *testing.T) {
+	siteID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	called := domain.AssignSubnetSiteInput{}
+	api := newHandlerTestAPI(stubService{
+		assignSubnetSiteFn: func(_ context.Context, input domain.AssignSubnetSiteInput) (domain.Subnet, error) {
+			called = input
+			return domain.Subnet{ID: input.ID, CIDR: mustPrefix(t, "10.0.0.0/24"), SiteID: input.SiteID}, nil
+		},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/subnets/42/site", strings.NewReader(`{"site_id":"11111111-1111-1111-1111-111111111111"}`))
+	rec := httptest.NewRecorder()
+	api.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if called != (domain.AssignSubnetSiteInput{ID: 42, SiteID: siteID}) {
+		t.Fatalf("unexpected assignment input: %+v", called)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/subnets/42/site", strings.NewReader(`{"site_id":null}`))
+	rec = httptest.NewRecorder()
+	api.Router().ServeHTTP(rec, req)
+	assertJSONError(t, rec, http.StatusBadRequest, "site_id is required")
 }
 
 func TestCreateIPReturnsConflictAsBadRequest(t *testing.T) {
