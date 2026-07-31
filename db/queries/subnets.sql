@@ -13,6 +13,12 @@ SELECT id, cidr, description, created_at, updated_at, site_id
 FROM subnets
 WHERE id = $1;
 
+-- name: UpdateSubnet :one
+UPDATE subnets
+SET cidr = $2, site_id = $3, description = $4, updated_at = now() AT TIME ZONE 'UTC'
+WHERE id = $1
+RETURNING id, cidr, description, created_at, updated_at, site_id;
+
 -- name: DeleteSubnetByID :one
 WITH deleted_rows AS (
     DELETE FROM subnets

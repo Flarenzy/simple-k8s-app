@@ -17,20 +17,31 @@ type HealthChecker interface {
 type API struct {
 	Logger             *slog.Logger
 	Health             HealthChecker
-	Service            domain.NetworkService
+	NetService         domain.NetworkService
+	SitesService       domain.SitesService
 	Authenticator      apiauth.Authenticator
 	CORSAllowedOrigins []string
 }
 
-func NewAPI(logger *slog.Logger, health HealthChecker, svc domain.NetworkService, authenticator apiauth.Authenticator) *API {
-	return NewAPIWithCORS(logger, health, svc, authenticator, nil)
+func NewAPI(logger *slog.Logger,
+	health HealthChecker,
+	netSvc domain.NetworkService,
+	sitesSvc domain.SitesService,
+	authenticator apiauth.Authenticator) *API {
+	return NewAPIWithCORS(logger, health, netSvc, sitesSvc, authenticator, nil)
 }
 
-func NewAPIWithCORS(logger *slog.Logger, health HealthChecker, svc domain.NetworkService, authenticator apiauth.Authenticator, corsAllowedOrigins []string) *API {
+func NewAPIWithCORS(logger *slog.Logger,
+	health HealthChecker,
+	netSvc domain.NetworkService,
+	sitesSvc domain.SitesService,
+	authenticator apiauth.Authenticator,
+	corsAllowedOrigins []string) *API {
 	return &API{
 		Logger:             logger,
 		Health:             health,
-		Service:            svc,
+		NetService:         netSvc,
+		SitesService:       sitesSvc,
 		Authenticator:      authenticator,
 		CORSAllowedOrigins: corsAllowedOrigins,
 	}
@@ -48,7 +59,14 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/subnets", a.handleGetAllSubnets)
 	mux.HandleFunc("POST /api/v1/subnets", a.handleCreateSubnet)
 	mux.HandleFunc("GET /api/v1/subnets/{id}", a.handleGetSubnetByID)
+	mux.HandleFunc("PATCH /api/v1/subnets/{id}", a.handleUpdateSubnet)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}", a.handleDeleteSubnetByID)
+	mux.HandleFunc("GET /api/v1/sites", a.handleGetAllSites)
+	mux.HandleFunc("POST /api/v1/sites", a.handleCreateSite)
+	mux.HandleFunc("GET /api/v1/sites/statistics", a.handleGetSiteStatistics)
+	mux.HandleFunc("GET /api/v1/sites/{id}", a.handleGetSiteByID)
+	mux.HandleFunc("PATCH /api/v1/sites/{id}", a.handleUpdateSite)
+	mux.HandleFunc("DELETE /api/v1/sites/{id}", a.handleDeleteSiteByID)
 	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
 	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)

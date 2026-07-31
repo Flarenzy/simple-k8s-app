@@ -8,6 +8,14 @@ import (
 
 type CreateSubnetInput struct {
 	CIDR        string
+	SiteID      *uuid.UUID
+	Description string
+}
+
+type UpdateSubnetInput struct {
+	ID          int64
+	CIDR        string
+	SiteID      *uuid.UUID
 	Description string
 }
 
@@ -33,6 +41,14 @@ type UpdateSiteInput struct {
 
 type CreateSubnetRecord struct {
 	CIDR        netip.Prefix
+	SiteID      *uuid.UUID
+	Description string
+}
+
+type UpdateSubnetRecord struct {
+	ID          int64
+	CIDR        netip.Prefix
+	SiteID      *uuid.UUID
 	Description string
 }
 

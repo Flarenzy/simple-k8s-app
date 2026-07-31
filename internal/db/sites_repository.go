@@ -2,10 +2,12 @@ package db
 
 import (
 	"context"
+	"errors"
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -32,6 +34,9 @@ func (r *SitesRepository) List(ctx context.Context) ([]domain.Site, error) {
 func (r *SitesRepository) FindByID(ctx context.Context, id uuid.UUID) (domain.Site, error) {
 	site, err := r.queries.GetSiteByID(ctx, uUIDtoPgUUID(id))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Site{}, domain.ErrNotFound
+		}
 		return domain.Site{}, err
 	}
 	return toDomainSite(site), nil
@@ -51,11 +56,14 @@ func (r *SitesRepository) Create(ctx context.Context, input domain.CreateSiteRec
 }
 
 func (r *SitesRepository) Delete(ctx context.Context, id uuid.UUID) (bool, error) {
-	_, err := r.queries.DeleteSiteByID(ctx, uUIDtoPgUUID(id))
+	count, err := r.queries.DeleteSiteByID(ctx, uUIDtoPgUUID(id))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, err
 	}
-	return true, nil
+	return count > 0, nil
 }
 
 func (r *SitesRepository) Update(ctx context.Context, input domain.UpdateSiteInput) (domain.Site, error) {
@@ -66,6 +74,9 @@ func (r *SitesRepository) Update(ctx context.Context, input domain.UpdateSiteInp
 	updateSitesParams.Description = input.Description
 	site, err := r.queries.UpdateSite(ctx, updateSitesParams)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Site{}, domain.ErrNotFound
+		}
 		return domain.Site{}, err
 	}
 	return toDomainSite(site), nil

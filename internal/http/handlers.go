@@ -44,7 +44,7 @@ func (a *API) handleReadyz(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/subnets [get]
 func (a *API) handleGetAllSubnets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	subnets, err := a.Service.ListSubnets(ctx)
+	subnets, err := a.NetService.ListSubnets(ctx)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "reading subnets", "err", err.Error())
 		err = encode(w, r, http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
@@ -87,7 +87,7 @@ func (a *API) handleCreateSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respSubnet, err := a.Service.CreateSubnet(ctx, subnetReq.toInput())
+	respSubnet, err := a.NetService.CreateSubnet(ctx, subnetReq.toInput())
 	if err != nil {
 		status := http.StatusInternalServerError
 		resp := ErrorResponse{Error: "internal server error while saving subnet to db"}
@@ -125,7 +125,7 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnet, err := a.Service.GetSubnet(ctx, id)
+	subnet, err := a.NetService.GetSubnet(ctx, id)
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "failed to get subnet by id", "id", id, "err", err.Error())
 		status := http.StatusInternalServerError
@@ -145,6 +145,56 @@ func (a *API) handleGetSubnetByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.Logger.ErrorContext(ctx, "responding to client", "err", err.Error())
 	}
+}
+
+// @Summary Update subnet
+// @Tags subnets
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "Subnet ID"
+// @Param subnet body CreateSubnetRequest true "Subnet payload"
+// @Success 200 {object} SubnetResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/subnets/{id} [patch]
+func (a *API) handleUpdateSubnet(w http.ResponseWriter, r *http.Request) {
+	ctx, id, err, done := parseID(w, r, a)
+	if done {
+		return
+	}
+
+	request, err := decode[CreateSubnetRequest](r)
+	defer r.Body.Close()
+	if err != nil {
+		a.Logger.ErrorContext(ctx, "unmarshaling subnet from request", "err", err.Error())
+		_ = encode(w, r, http.StatusBadRequest, ErrorResponse{Error: "bad request"})
+		return
+	}
+
+	subnet, err := a.NetService.UpdateSubnet(ctx, domain.UpdateSubnetInput{
+		ID:          id,
+		CIDR:        request.CIDR,
+		SiteID:      request.SiteID,
+		Description: request.Description,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		response := ErrorResponse{Error: "internal server error"}
+		if errors.Is(err, domain.ErrInvalidInput) {
+			status = http.StatusBadRequest
+			response = ErrorResponse{Error: "invalid cidr"}
+		} else if errors.Is(err, domain.ErrNotFound) {
+			status = http.StatusNotFound
+			response = ErrorResponse{Error: "subnet not found"}
+		}
+		a.Logger.ErrorContext(ctx, "updating subnet", "id", id, "err", err.Error())
+		_ = encode(w, r, status, response)
+		return
+	}
+
+	_ = encode(w, r, http.StatusOK, subnetToResponse(subnet))
 }
 
 // @Summary Create ip under subnet
@@ -181,7 +231,7 @@ func (a *API) handleCreateIPBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respIP, err := a.Service.CreateIP(ctx, id, ipReq.toInput())
+	respIP, err := a.NetService.CreateIP(ctx, id, ipReq.toInput())
 	if err != nil {
 		if errors.Is(err, domain.ErrConflict) {
 			a.Logger.DebugContext(ctx, "tried to enter duplicate ip", "ip", ipReq.IP, "err", err.Error())
@@ -238,7 +288,7 @@ func (a *API) handleGetIPsBySubnetID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respIPs, err := a.Service.ListIPs(ctx, id)
+	respIPs, err := a.NetService.ListIPs(ctx, id)
 	if err != nil {
 		status := http.StatusInternalServerError
 		resp := ErrorResponse{Error: "internal server error"}
@@ -300,7 +350,7 @@ func (a *API) handleUpdateIPByUUID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respIP, err := a.Service.UpdateIPHostname(ctx, id, reqID, reqHostname.toInput())
+	respIP, err := a.NetService.UpdateIPHostname(ctx, id, reqID, reqHostname.toInput())
 	if err != nil {
 		status := http.StatusInternalServerError
 		resp := ErrorResponse{Error: "internal server error"}
@@ -358,7 +408,7 @@ func (a *API) handleDeleteIPByUUIDandSubnetID(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	err = a.Service.DeleteIP(ctx, id, reqID)
+	err = a.NetService.DeleteIP(ctx, id, reqID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			a.Logger.DebugContext(ctx, "subnet id or ip uuid not found", "id", id, "uuid", string(reqID), "err", err.Error())
@@ -422,7 +472,7 @@ func (a *API) handleDeleteSubnetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.Service.DeleteSubnet(ctx, id)
+	err = a.NetService.DeleteSubnet(ctx, id)
 	if err != nil {
 		status := http.StatusInternalServerError
 		resp := ErrorResponse{Error: "internal server error"}

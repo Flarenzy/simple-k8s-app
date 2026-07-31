@@ -17,6 +17,9 @@ definitions:
       description:
         example: Office network
         type: string
+      site_id:
+        example: 50e8400-e29b-41d4-a716-446655440000
+        type: string
     required:
     - cidr
     type: object
@@ -47,6 +50,51 @@ definitions:
         example: "2024-05-10T15:04:05Z"
         type: string
     type: object
+  http.SiteRequest:
+    properties:
+      description:
+        example: Primary office
+        type: string
+      name:
+        example: Belgrade
+        type: string
+    required:
+    - name
+    type: object
+  http.SiteResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  http.SiteStatisticsResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      free_ip_count:
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
+      subnet_count:
+        type: integer
+      total_ip_count:
+        type: integer
+      updated_at:
+        type: string
+      used_ip_count:
+        type: integer
+    type: object
   http.SubnetResponse:
     properties:
       cidr:
@@ -61,6 +109,9 @@ definitions:
       id:
         example: 1
         type: integer
+      site_id:
+        example: 50e8400-e29b-41d4-a716-446655440000
+        type: string
       updated_at:
         example: "2024-05-10T15:04:05Z"
         type: string
@@ -85,6 +136,174 @@ info:
   title: Simple IPAM API
   version: "1.0"
 paths:
+  /api/v1/sites:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.SiteResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List sites
+      tags:
+      - sites
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Site payload
+        in: body
+        name: site
+        required: true
+        schema:
+          $ref: '#/definitions/http.SiteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/http.SiteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create site
+      tags:
+      - sites
+  /api/v1/sites/{id}:
+    delete:
+      parameters:
+      - description: Site ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete site
+      tags:
+      - sites
+    get:
+      parameters:
+      - description: Site ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SiteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get site by ID
+      tags:
+      - sites
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Site ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Site payload
+        in: body
+        name: site
+        required: true
+        schema:
+          $ref: '#/definitions/http.SiteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SiteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update site
+      tags:
+      - sites
+  /api/v1/sites/statistics:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.SiteStatisticsResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get site statistics
+      tags:
+      - sites
   /api/v1/subnets:
     get:
       produces:
@@ -192,6 +411,45 @@ paths:
       security:
       - BearerAuth: []
       summary: Get subnet by ID
+      tags:
+      - subnets
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Subnet payload
+        in: body
+        name: subnet
+        required: true
+        schema:
+          $ref: '#/definitions/http.CreateSubnetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SubnetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update subnet
       tags:
       - subnets
   /api/v1/subnets/{id}/ips:

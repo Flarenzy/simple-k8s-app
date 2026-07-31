@@ -104,6 +104,20 @@ input {
 	transition: transform 120ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
+.primary:disabled,
+.secondary:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+	transform: none;
+}
+
+.button-group,
+.actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
 .primary {
 	background: linear-gradient(135deg, #2563eb, #1d4ed8);
 	color: #fff;
@@ -187,6 +201,10 @@ input {
 	width: 100%;
 	border-collapse: collapse;
 	margin-top: 12px;
+}
+
+.panel {
+	overflow-x: auto;
 }
 
 .table th,

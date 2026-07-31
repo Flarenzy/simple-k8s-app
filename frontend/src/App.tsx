@@ -2,11 +2,12 @@ import { FormEvent, memo, useEffect, useMemo, useState } from "react";
 import { getEnv } from "./env";
 import keycloak, { initKeycloak, keycloakEnabled } from "./keycloak";
 
-type View = "home" | "subnet";
+type View = "home" | "subnet" | "sites";
 
 type Subnet = {
 	id: number;
 	cidr: string;
+	site_id?: string;
 	description: string;
 	created_at: string;
 	updated_at: string;
@@ -19,6 +20,18 @@ type IPAddress = {
 	subnet_id: number;
 	created_at: string;
 	updated_at: string;
+};
+
+type SiteStatistics = {
+	id: string;
+	name: string;
+	description: string;
+	created_at: string;
+	updated_at: string;
+	subnet_count: number;
+	used_ip_count: number;
+	total_ip_count: number;
+	free_ip_count: number;
 };
 
 const API_BASE = getEnv("VITE_API_BASE", "/api/v1");
@@ -106,13 +119,25 @@ export default function App() {
 	const [deletingSubnetId, setDeletingSubnetId] = useState<number | null>(null);
 	const [deleteSubnetError, setDeleteSubnetError] = useState<string | null>(null);
 	const [showCreate, setShowCreate] = useState(false);
+	const [editingSubnet, setEditingSubnet] = useState<Subnet | null>(null);
 	const [newCidr, setNewCidr] = useState("");
 	const [newDesc, setNewDesc] = useState("");
+	const [newSiteID, setNewSiteID] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [authReady, setAuthReady] = useState(false);
 	const [authError, setAuthError] = useState<string | null>(null);
 	const [windowStart, setWindowStart] = useState(0);
+	const [sites, setSites] = useState<SiteStatistics[]>([]);
+	const [sitesLoading, setSitesLoading] = useState(false);
+	const [sitesError, setSitesError] = useState<string | null>(null);
+	const [showSiteForm, setShowSiteForm] = useState(false);
+	const [editingSite, setEditingSite] = useState<SiteStatistics | null>(null);
+	const [siteName, setSiteName] = useState("");
+	const [siteDescription, setSiteDescription] = useState("");
+	const [savingSite, setSavingSite] = useState(false);
+	const [siteSaveError, setSiteSaveError] = useState<string | null>(null);
+	const [deletingSiteId, setDeletingSiteId] = useState<string | null>(null);
 
 	const authClient = keycloak;
 
@@ -171,11 +196,39 @@ export default function App() {
 		}
 	};
 
+	const fetchSites = async () => {
+		setSitesLoading(true);
+		setSitesError(null);
+		try {
+			const resp = await fetchWithAuth(`${API_BASE}/sites/statistics`);
+			if (!resp.ok) {
+				setSitesError(await getRequestError(resp));
+				return;
+			}
+			const data: SiteStatistics[] = await resp.json();
+			setSites(data);
+		} catch (err) {
+			setSitesError(err instanceof Error ? err.message : "unknown error");
+		} finally {
+			setSitesLoading(false);
+		}
+	};
+
+	const openSubnetForm = (subnet?: Subnet) => {
+		setEditingSubnet(subnet ?? null);
+		setNewCidr(subnet?.cidr ?? "");
+		setNewDesc(subnet?.description ?? "");
+		setNewSiteID(subnet?.site_id ?? "");
+		setSaveError(null);
+		setShowCreate(true);
+	};
+
 	useEffect(() => {
 		let cancelled = false;
 		if (!keycloakEnabled || !authClient) {
 			setAuthReady(true);
 			void fetchSubnets();
+			void fetchSites();
 			return () => {
 				cancelled = true;
 			};
@@ -195,6 +248,7 @@ export default function App() {
 				};
 				setAuthReady(true);
 				void fetchSubnets();
+				void fetchSites();
 			})
 			.catch((err) => {
 				if (cancelled) return;
@@ -272,20 +326,27 @@ export default function App() {
 		setSaving(true);
 		setSaveError(null);
 		try {
-			const resp = await fetchWithAuth(`${API_BASE}/subnets`, {
-				method: "POST",
+			const resp = await fetchWithAuth(editingSubnet ? `${API_BASE}/subnets/${editingSubnet.id}` : `${API_BASE}/subnets`, {
+				method: editingSubnet ? "PATCH" : "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ cidr: newCidr.trim(), description: newDesc.trim() }),
+				body: JSON.stringify({
+					cidr: newCidr.trim(),
+					description: newDesc.trim(),
+					site_id: newSiteID || undefined,
+				}),
 			});
 			if (!resp.ok) {
 				setSaveError(await getRequestError(resp));
 				return;
 			}
-			const created: Subnet = await resp.json();
-			setSubnets((prev) => [created, ...prev]);
-			setShowCreate(false);
+				const created: Subnet = await resp.json();
+				setSubnets((prev) => editingSubnet ? prev.map((subnet) => subnet.id === created.id ? created : subnet) : [created, ...prev]);
+				void fetchSites();
+				setShowCreate(false);
+			setEditingSubnet(null);
 			setNewCidr("");
 			setNewDesc("");
+			setNewSiteID("");
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "unknown error";
 			setSaveError(message);
@@ -308,11 +369,12 @@ export default function App() {
 		setIpDeleteError(null);
 		try {
 			const resp = await fetchWithAuth(`${API_BASE}/subnets/${selectedSubnet.id}/ips/${id}`, { method: "DELETE" });
-			if (!resp.ok) {
-				setIpDeleteError(await getRequestError(resp));
-				return;
-			}
-			setIps((prev) => prev.filter((ip) => ip.ip !== ipAddress));
+				if (!resp.ok) {
+					setIpDeleteError(await getRequestError(resp));
+					return;
+				}
+				setIps((prev) => prev.filter((ip) => ip.ip !== ipAddress));
+				void fetchSites();
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "unknown error";
 			setIpDeleteError(message);
@@ -353,10 +415,11 @@ export default function App() {
 				return;
 			}
 			const saved: IPAddress = await resp.json();
-			setIps((prev) => {
-				const others = prev.filter((p) => p.ip !== saved.ip);
-				return [saved, ...others];
-			});
+				setIps((prev) => {
+					const others = prev.filter((p) => p.ip !== saved.ip);
+					return [saved, ...others];
+				});
+				void fetchSites();
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "unknown error";
 			setIpSaveError(message);
@@ -373,8 +436,9 @@ export default function App() {
 			if (!resp.ok) {
 				setDeleteSubnetError(await getRequestError(resp));
 				return;
-			}
-			setSubnets((prev) => prev.filter((s) => s.id !== subnet.id));
+				}
+				setSubnets((prev) => prev.filter((s) => s.id !== subnet.id));
+				void fetchSites();
 			if (selectedSubnet?.id === subnet.id) {
 				setSelectedSubnet(null);
 				setView("home");
@@ -385,6 +449,62 @@ export default function App() {
 			setDeleteSubnetError(message);
 		} finally {
 			setDeletingSubnetId(null);
+		}
+	};
+
+	const openSiteForm = (site?: SiteStatistics) => {
+		setEditingSite(site ?? null);
+		setSiteName(site?.name ?? "");
+		setSiteDescription(site?.description ?? "");
+		setSiteSaveError(null);
+		setShowSiteForm(true);
+	};
+
+	const saveSite = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		const name = siteName.trim();
+		if (!name) {
+			setSiteSaveError("Name is required");
+			return;
+		}
+		setSavingSite(true);
+		setSiteSaveError(null);
+		try {
+			const resp = await fetchWithAuth(
+				editingSite ? `${API_BASE}/sites/${editingSite.id}` : `${API_BASE}/sites`,
+				{
+					method: editingSite ? "PATCH" : "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ name, description: siteDescription.trim() }),
+				},
+			);
+			if (!resp.ok) {
+				setSiteSaveError(await getRequestError(resp));
+				return;
+			}
+			setShowSiteForm(false);
+			await fetchSites();
+		} catch (err) {
+			setSiteSaveError(err instanceof Error ? err.message : "unknown error");
+		} finally {
+			setSavingSite(false);
+		}
+	};
+
+	const deleteSite = async (site: SiteStatistics) => {
+		setDeletingSiteId(site.id);
+		setSitesError(null);
+		try {
+			const resp = await fetchWithAuth(`${API_BASE}/sites/${site.id}`, { method: "DELETE" });
+			if (!resp.ok) {
+				setSitesError(await getRequestError(resp));
+				return;
+			}
+			setSites((prev) => prev.filter((item) => item.id !== site.id));
+		} catch (err) {
+			setSitesError(err instanceof Error ? err.message : "unknown error");
+		} finally {
+			setDeletingSiteId(null);
 		}
 	};
 
@@ -419,9 +539,10 @@ export default function App() {
 							<h1 className="panel__title">Subnets</h1>
 							<div className="pill">{subnets.length}</div>
 						</div>
-						<button className="primary" onClick={() => setShowCreate(true)}>
-							+ Add
-						</button>
+						<div className="button-group">
+							<button className="secondary" onClick={() => setView("sites")}>Sites</button>
+							<button className="primary" onClick={() => openSubnetForm()}>+ Add subnet</button>
+						</div>
 					</div>
 					<p className="muted">Current subnets and usage (ID hidden from UI).</p>
 
@@ -435,6 +556,7 @@ export default function App() {
 								<tr>
 									<th>CIDR</th>
 									<th>Description</th>
+									<th>Site</th>
 									<th>Usage</th>
 									<th>Updated</th>
 									<th />
@@ -443,7 +565,7 @@ export default function App() {
 							<tbody>
 								{subnets.length === 0 ? (
 									<tr>
-										<td colSpan={4} className="muted">
+										<td colSpan={6} className="muted">
 											No subnets yet.
 										</td>
 									</tr>
@@ -459,9 +581,11 @@ export default function App() {
 										>
 											<td className="mono">{subnet.cidr}</td>
 											<td>{subnet.description || "—"}</td>
+											<td>{sites.find((site) => site.id === subnet.site_id)?.name || "Unassigned"}</td>
 											<td className="muted">N/A</td>
 											<td className="muted">{new Date(subnet.updated_at).toLocaleString()}</td>
 											<td>
+												<button className="secondary" type="button" onClick={(e) => { e.stopPropagation(); openSubnetForm(subnet); }}>Edit</button>
 												<button
 													className="secondary danger"
 													type="button"
@@ -487,8 +611,8 @@ export default function App() {
 						<div className="modal__backdrop" onClick={() => setShowCreate(false)} />
 						<form className="modal__content" onSubmit={handleCreateSubmit}>
 							<div className="card__header">
-								<p className="eyebrow">Create subnet</p>
-								<h2 className="title">New subnet</h2>
+														<p className="eyebrow">{editingSubnet ? "Edit subnet" : "Create subnet"}</p>
+														<h2 className="title">{editingSubnet ? editingSubnet.cidr : "New subnet"}</h2>
 								<p className="muted">Backend validates the CIDR.</p>
 							</div>
 
@@ -500,6 +624,14 @@ export default function App() {
 									placeholder="10.0.0.0/24"
 									required
 								/>
+							</label>
+
+							<label className="field">
+								<span>Site</span>
+								<select value={newSiteID} onChange={(e) => setNewSiteID(e.target.value)}>
+									<option value="">Unassigned</option>
+									{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
+								</select>
 							</label>
 
 							<label className="field">
@@ -524,6 +656,52 @@ export default function App() {
 						</form>
 					</div>
 				) : null}
+			</div>
+		);
+	}
+
+	if (view === "sites") {
+		return (
+			<div className="page">
+				<header className="header">
+					<button className="secondary" onClick={() => setView("home")}>← Subnets</button>
+					{keycloakEnabled && authClient ? <button className="secondary" onClick={handleLogout}>Log out</button> : null}
+				</header>
+				<main className="panel">
+					<div className="panel__title-row">
+						<div>
+							<h1 className="panel__title">Sites</h1>
+							<p className="muted">Network inventory grouped by location.</p>
+						</div>
+						<button className="primary" onClick={() => openSiteForm()}>+ Add site</button>
+					</div>
+					{sitesLoading ? <div className="muted">Loading sites...</div> : null}
+					{sitesError ? <div className="error">Failed to load sites: {sitesError}</div> : null}
+					{!sitesLoading && !sitesError ? (
+						<table className="table">
+							<thead><tr><th>Name</th><th>Subnets</th><th>IP usage</th><th>Available</th><th>Updated</th><th /></tr></thead>
+							<tbody>
+								{sites.length === 0 ? <tr><td colSpan={6} className="muted">No sites yet.</td></tr> : sites.map((site) => (
+									<tr key={site.id}>
+										<td><div>{site.name}</div><div className="muted">{site.description || "No description"}</div></td>
+										<td>{site.subnet_count}</td>
+										<td>{site.used_ip_count} / {site.total_ip_count}</td>
+										<td>{site.free_ip_count}</td>
+										<td className="muted">{new Date(site.updated_at).toLocaleString()}</td>
+										<td className="actions"><button className="secondary" onClick={() => openSiteForm(site)}>Edit</button><button className="secondary danger" onClick={() => void deleteSite(site)} disabled={deletingSiteId === site.id}>{deletingSiteId === site.id ? "Deleting..." : "Delete"}</button></td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					) : null}
+				</main>
+				{showSiteForm ? <div className="modal"><div className="modal__backdrop" onClick={() => setShowSiteForm(false)} /><form className="modal__content" onSubmit={saveSite}>
+					<div className="card__header"><p className="eyebrow">{editingSite ? "Edit site" : "Create site"}</p><h2 className="title">{editingSite ? editingSite.name : "New site"}</h2></div>
+					<label className="field"><span>Name</span><input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Belgrade office" required /></label>
+					<label className="field"><span>Description</span><input value={siteDescription} onChange={(e) => setSiteDescription(e.target.value)} placeholder="Primary office network" /></label>
+					{siteSaveError ? <div className="error">Failed: {siteSaveError}</div> : null}
+					<div className="modal__actions"><button type="button" className="secondary" onClick={() => setShowSiteForm(false)} disabled={savingSite}>Cancel</button><button type="submit" className="primary" disabled={savingSite}>{savingSite ? "Saving..." : "Save"}</button></div>
+				</form></div> : null}
 			</div>
 		);
 	}

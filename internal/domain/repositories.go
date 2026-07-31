@@ -10,6 +10,7 @@ type SubnetRepository interface {
 	List(ctx context.Context) ([]Subnet, error)
 	FindByID(ctx context.Context, id int64) (Subnet, error)
 	Create(ctx context.Context, input CreateSubnetRecord) (Subnet, error)
+	Update(ctx context.Context, input UpdateSubnetRecord) (Subnet, error)
 	Delete(ctx context.Context, id int64) (bool, error)
 }
 

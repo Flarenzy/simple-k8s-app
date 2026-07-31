@@ -40,6 +40,14 @@ func (s *loggingNetworkService) CreateSubnet(ctx context.Context, input CreateSu
 	return subnet, nil
 }
 
+func (s *loggingNetworkService) UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error) {
+	subnet, err := s.next.UpdateSubnet(ctx, input)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "update subnet failed", "id", input.ID, "err", err.Error())
+	}
+	return subnet, err
+}
+
 func (s *loggingNetworkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {
 	subnet, err := s.next.GetSubnet(ctx, id)
 	if err != nil {

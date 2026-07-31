@@ -9,6 +9,7 @@ import (
 type NetworkService interface {
 	ListSubnets(ctx context.Context) ([]Subnet, error)
 	CreateSubnet(ctx context.Context, input CreateSubnetInput) (Subnet, error)
+	UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error)
 	GetSubnet(ctx context.Context, id int64) (Subnet, error)
 	DeleteSubnet(ctx context.Context, id int64) error
 	ListIPs(ctx context.Context, subnetID int64) ([]IPAddress, error)

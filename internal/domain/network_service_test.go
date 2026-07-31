@@ -11,6 +11,7 @@ type stubSubnetRepository struct {
 	listFn   func(context.Context) ([]Subnet, error)
 	findFn   func(context.Context, int64) (Subnet, error)
 	createFn func(context.Context, CreateSubnetRecord) (Subnet, error)
+	updateFn func(context.Context, UpdateSubnetRecord) (Subnet, error)
 	deleteFn func(context.Context, int64) (bool, error)
 }
 
@@ -33,6 +34,13 @@ func (s stubSubnetRepository) Create(ctx context.Context, input CreateSubnetReco
 		return Subnet{}, nil
 	}
 	return s.createFn(ctx, input)
+}
+
+func (s stubSubnetRepository) Update(ctx context.Context, input UpdateSubnetRecord) (Subnet, error) {
+	if s.updateFn == nil {
+		return Subnet{}, nil
+	}
+	return s.updateFn(ctx, input)
 }
 
 func (s stubSubnetRepository) Delete(ctx context.Context, id int64) (bool, error) {

@@ -32,12 +32,26 @@ func (s *networkService) CreateSubnet(ctx context.Context, input CreateSubnetInp
 	}
 	return s.subnets.Create(ctx, CreateSubnetRecord{
 		CIDR:        cidr,
+		SiteID:      input.SiteID,
 		Description: input.Description,
 	})
 }
 
 func (s *networkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {
 	return s.subnets.FindByID(ctx, id)
+}
+
+func (s *networkService) UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error) {
+	cidr, err := netip.ParsePrefix(input.CIDR)
+	if err != nil {
+		return Subnet{}, fmt.Errorf("%w: invalid cidr", ErrInvalidInput)
+	}
+	return s.subnets.Update(ctx, UpdateSubnetRecord{
+		ID:          input.ID,
+		CIDR:        cidr,
+		SiteID:      input.SiteID,
+		Description: input.Description,
+	})
 }
 
 func (s *networkService) DeleteSubnet(ctx context.Context, id int64) error {

@@ -6,7 +6,9 @@ import (
 
 	sqlc "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type SubnetRepository struct {
@@ -46,12 +48,29 @@ func (r *SubnetRepository) FindByID(ctx context.Context, id int64) (domain.Subne
 func (r *SubnetRepository) Create(ctx context.Context, input domain.CreateSubnetRecord) (domain.Subnet, error) {
 	subnet, err := r.queries.CreateSubnet(ctx, sqlc.CreateSubnetParams{
 		Cidr:        input.CIDR,
+		SiteID:      siteIDParam(input.SiteID),
 		Description: input.Description,
 	})
 	if err != nil {
 		return domain.Subnet{}, err
 	}
 
+	return toDomainSubnet(subnet), nil
+}
+
+func (r *SubnetRepository) Update(ctx context.Context, input domain.UpdateSubnetRecord) (domain.Subnet, error) {
+	subnet, err := r.queries.UpdateSubnet(ctx, sqlc.UpdateSubnetParams{
+		ID:          input.ID,
+		Cidr:        input.CIDR,
+		SiteID:      siteIDParam(input.SiteID),
+		Description: input.Description,
+	})
+	if err != nil {
+		if isNoRows(err) {
+			return domain.Subnet{}, domain.ErrNotFound
+		}
+		return domain.Subnet{}, err
+	}
 	return toDomainSubnet(subnet), nil
 }
 
@@ -77,4 +96,11 @@ func toDomainSubnet(subnet sqlc.Subnet) domain.Subnet {
 
 func isNoRows(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
+}
+
+func siteIDParam(id *uuid.UUID) pgtype.UUID {
+	if id == nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: *id, Valid: true}
 }

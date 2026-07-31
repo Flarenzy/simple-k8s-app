@@ -56,6 +56,16 @@ type subnetResponse struct {
 	Description string `json:"description"`
 }
 
+type siteResponse struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	SubnetCount  int64  `json:"subnet_count"`
+	UsedIPCount  int64  `json:"used_ip_count"`
+	TotalIPCount int64  `json:"total_ip_count"`
+	FreeIPCount  int64  `json:"free_ip_count"`
+}
+
 type ipResponse struct {
 	ID       string `json:"id"`
 	IP       string `json:"ip"`
@@ -173,6 +183,127 @@ func TestInfrastructureAndAuthBoundaries(t *testing.T) {
 
 	var subnets []subnetResponse
 	s.decodeJSON(t, resp, &subnets)
+}
+
+func TestSitesCRUDAndStatistics(t *testing.T) {
+	s := mustSuite(t)
+	token := s.mustToken(t)
+
+	createResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", token, map[string]any{
+		"name":        "Integration site",
+		"description": "Site API coverage",
+	})
+	if err != nil {
+		t.Fatalf("create site: %v", err)
+	}
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 creating site, got %d", createResp.StatusCode)
+	}
+	var site siteResponse
+	s.decodeJSON(t, createResp, &site)
+	if site.ID == "" || site.Name != "Integration site" {
+		t.Fatalf("unexpected created site: %+v", site)
+	}
+
+	updateResp, err := s.jsonRequest(t, http.MethodPatch, "/api/v1/sites/"+site.ID, token, map[string]any{
+		"name":        "Updated integration site",
+		"description": "Updated site API coverage",
+	})
+	if err != nil {
+		t.Fatalf("update site: %v", err)
+	}
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 updating site, got %d", updateResp.StatusCode)
+	}
+	s.decodeJSON(t, updateResp, &site)
+	if site.Name != "Updated integration site" {
+		t.Fatalf("unexpected updated site: %+v", site)
+	}
+
+	statisticsResp, err := s.get(t, "/api/v1/sites/statistics", token)
+	if err != nil {
+		t.Fatalf("site statistics: %v", err)
+	}
+	if statisticsResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 reading site statistics, got %d", statisticsResp.StatusCode)
+	}
+	var statistics []siteResponse
+	s.decodeJSON(t, statisticsResp, &statistics)
+	if len(statistics) == 0 {
+		t.Fatal("expected site statistics")
+	}
+
+	createSubnetResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/subnets", token, map[string]any{
+		"cidr":        "10.60.0.0/24",
+		"site_id":     site.ID,
+		"description": "Associated integration subnet",
+	})
+	if err != nil {
+		t.Fatalf("create associated subnet: %v", err)
+	}
+	if createSubnetResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 creating associated subnet, got %d", createSubnetResp.StatusCode)
+	}
+	var subnet subnetResponse
+	s.decodeJSON(t, createSubnetResp, &subnet)
+
+	createIPResp, err := s.jsonRequest(t, http.MethodPost, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token, map[string]any{
+		"ip":       "10.60.0.10",
+		"hostname": "associated-host",
+	})
+	if err != nil {
+		t.Fatalf("create associated subnet IP: %v", err)
+	}
+	if createIPResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 creating associated subnet IP, got %d", createIPResp.StatusCode)
+	}
+	var associatedIP ipResponse
+	s.decodeJSON(t, createIPResp, &associatedIP)
+
+	statisticsResp, err = s.get(t, "/api/v1/sites/statistics", token)
+	if err != nil {
+		t.Fatalf("read associated site statistics: %v", err)
+	}
+	if statisticsResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 reading associated site statistics, got %d", statisticsResp.StatusCode)
+	}
+	s.decodeJSON(t, statisticsResp, &statistics)
+	var associated siteResponse
+	for _, item := range statistics {
+		if item.ID == site.ID {
+			associated = item
+			break
+		}
+	}
+	if associated.SubnetCount != 1 || associated.UsedIPCount != 1 || associated.FreeIPCount != 253 || associated.TotalIPCount != 254 {
+		t.Fatalf("unexpected associated site statistics: %+v", associated)
+	}
+
+	deleteIPResp, err := s.request(t, http.MethodDelete, fmt.Sprintf("/api/v1/subnets/%d/ips/%s", subnet.ID, associatedIP.ID), token, nil)
+	if err != nil {
+		t.Fatalf("delete associated subnet IP: %v", err)
+	}
+	if deleteIPResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 deleting associated subnet IP, got %d", deleteIPResp.StatusCode)
+	}
+	s.closeBody(t, deleteIPResp)
+
+	deleteSubnetResp, err := s.request(t, http.MethodDelete, fmt.Sprintf("/api/v1/subnets/%d", subnet.ID), token, nil)
+	if err != nil {
+		t.Fatalf("delete associated subnet: %v", err)
+	}
+	if deleteSubnetResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 deleting associated subnet, got %d", deleteSubnetResp.StatusCode)
+	}
+	s.closeBody(t, deleteSubnetResp)
+
+	deleteResp, err := s.jsonRequest(t, http.MethodDelete, "/api/v1/sites/"+site.ID, token, nil)
+	if err != nil {
+		t.Fatalf("delete site: %v", err)
+	}
+	if deleteResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 deleting site, got %d", deleteResp.StatusCode)
+	}
 }
 
 func TestCustomerJourney(t *testing.T) {

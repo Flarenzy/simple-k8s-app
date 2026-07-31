@@ -106,3 +106,36 @@ func (q *Queries) ListSubnets(ctx context.Context) ([]Subnet, error) {
 	}
 	return items, nil
 }
+
+const updateSubnet = `-- name: UpdateSubnet :one
+UPDATE subnets
+SET cidr = $2, site_id = $3, description = $4, updated_at = now() AT TIME ZONE 'UTC'
+WHERE id = $1
+RETURNING id, cidr, description, created_at, updated_at, site_id
+`
+
+type UpdateSubnetParams struct {
+	ID          int64        `json:"id"`
+	Cidr        netip.Prefix `json:"cidr"`
+	SiteID      pgtype.UUID  `json:"site_id"`
+	Description string       `json:"description"`
+}
+
+func (q *Queries) UpdateSubnet(ctx context.Context, arg UpdateSubnetParams) (Subnet, error) {
+	row := q.db.QueryRow(ctx, updateSubnet,
+		arg.ID,
+		arg.Cidr,
+		arg.SiteID,
+		arg.Description,
+	)
+	var i Subnet
+	err := row.Scan(
+		&i.ID,
+		&i.Cidr,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SiteID,
+	)
+	return i, err
+}

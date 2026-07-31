@@ -2,7 +2,7 @@ package domain
 
 import (
 	"context"
-	"math"
+	"net/netip"
 
 	"github.com/google/uuid"
 )
@@ -26,11 +26,11 @@ func (s *sitesService) FindByID(ctx context.Context, id uuid.UUID) (Site, error)
 }
 
 func (s *sitesService) Delete(ctx context.Context, id uuid.UUID) (bool, error) {
-	_, err := s.sites.Delete(ctx, id)
+	deleted, err := s.sites.Delete(ctx, id)
 	if err != nil {
 		return false, err
 	}
-	return true, nil
+	return deleted, nil
 }
 
 func (s *sitesService) Create(ctx context.Context, input CreateSiteInput) (Site, error) {
@@ -88,27 +88,37 @@ func (s *sitesService) Statistics(ctx context.Context) ([]SiteStatistics, error)
 	return statistics, nil
 }
 
-// TODO: refactor func
 func addSubnetStatistic(siteStat SiteStatistics, subStat SubnetStatistics) SiteStatistics {
 	if !subStat.CIDR.IsValid() {
 		return siteStat
 	}
 	siteStat.SubnetCount++
 	siteStat.UsedIPCount += subStat.UsedIPCount
-	if subStat.CIDR.Bits() == 31 {
-		if 2-subStat.UsedIPCount >= 0 {
-			siteStat.FreeIPCount += 2 - subStat.UsedIPCount
-		}
-	} else if subStat.CIDR.Bits() == 32 {
-		if 1-subStat.UsedIPCount >= 0 {
-			siteStat.FreeIPCount += 1 - subStat.UsedIPCount
-		}
-	} else {
-		availAddr := math.Pow(2, float64(32-subStat.CIDR.Bits())) - 2
-		if subStat.UsedIPCount <= int64(availAddr) {
-			siteStat.FreeIPCount += int64(availAddr) - subStat.UsedIPCount
-		}
+	capacity := subnetCapacity(subStat.CIDR)
+	if capacity < subStat.UsedIPCount {
+		capacity = subStat.UsedIPCount
 	}
+	siteStat.FreeIPCount += capacity - subStat.UsedIPCount
 	siteStat.TotalIPCount = siteStat.FreeIPCount + siteStat.UsedIPCount
 	return siteStat
+}
+
+func subnetCapacity(cidr netip.Prefix) int64 {
+	bits := cidr.Bits()
+	if cidr.Addr().Is4() {
+		switch bits {
+		case 31:
+			return 2
+		case 32:
+			return 1
+		default:
+			return (int64(1) << (32 - bits)) - 2
+		}
+	}
+
+	hostBits := 128 - bits
+	if hostBits >= 63 {
+		return 0
+	}
+	return int64(1) << hostBits
 }

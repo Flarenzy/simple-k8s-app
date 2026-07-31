@@ -27,6 +27,7 @@ func (s stubHealthChecker) Ping(context.Context) error {
 type stubService struct {
 	listSubnetsFn      func(context.Context) ([]domain.Subnet, error)
 	createSubnetFn     func(context.Context, domain.CreateSubnetInput) (domain.Subnet, error)
+	updateSubnetFn     func(context.Context, domain.UpdateSubnetInput) (domain.Subnet, error)
 	getSubnetFn        func(context.Context, int64) (domain.Subnet, error)
 	deleteSubnetFn     func(context.Context, int64) error
 	listIPsFn          func(context.Context, int64) ([]domain.IPAddress, error)
@@ -47,6 +48,13 @@ func (s stubService) CreateSubnet(ctx context.Context, input domain.CreateSubnet
 		return domain.Subnet{}, nil
 	}
 	return s.createSubnetFn(ctx, input)
+}
+
+func (s stubService) UpdateSubnet(ctx context.Context, input domain.UpdateSubnetInput) (domain.Subnet, error) {
+	if s.updateSubnetFn == nil {
+		return domain.Subnet{}, nil
+	}
+	return s.updateSubnetFn(ctx, input)
 }
 
 func (s stubService) GetSubnet(ctx context.Context, id int64) (domain.Subnet, error) {
@@ -96,6 +104,7 @@ func newHandlerTestAPI(service domain.NetworkService, healthErr error) *API {
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		stubHealthChecker{err: healthErr},
 		service,
+		nil,
 		nil,
 	)
 }

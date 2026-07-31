@@ -37,6 +37,7 @@ func (h *captureHandler) WithGroup(string) slog.Handler {
 type stubNetworkService struct {
 	listSubnetsFn      func(context.Context) ([]Subnet, error)
 	createSubnetFn     func(context.Context, CreateSubnetInput) (Subnet, error)
+	updateSubnetFn     func(context.Context, UpdateSubnetInput) (Subnet, error)
 	getSubnetFn        func(context.Context, int64) (Subnet, error)
 	deleteSubnetFn     func(context.Context, int64) error
 	listIPsFn          func(context.Context, int64) ([]IPAddress, error)
@@ -57,6 +58,13 @@ func (s stubNetworkService) CreateSubnet(ctx context.Context, input CreateSubnet
 		return Subnet{}, nil
 	}
 	return s.createSubnetFn(ctx, input)
+}
+
+func (s stubNetworkService) UpdateSubnet(ctx context.Context, input UpdateSubnetInput) (Subnet, error) {
+	if s.updateSubnetFn == nil {
+		return Subnet{}, nil
+	}
+	return s.updateSubnetFn(ctx, input)
 }
 
 func (s stubNetworkService) GetSubnet(ctx context.Context, id int64) (Subnet, error) {

@@ -96,13 +96,15 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	queries := sqlcdb.New(pool)
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
+	sitesRepo := appdb.NewSitesRepository(queries)
 	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkService(subnetRepo, ipRepo))
+	sitesService := domain.NewSitesService(sitesRepo)
 	authenticator, err := newAuthenticator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("initialize authenticator: %w", err)
 	}
 
-	api := apihttp.NewAPIWithCORS(logger, pool, networkService, authenticator, cfg.CORSAllowedOrigins)
+	api := apihttp.NewAPIWithCORS(logger, pool, networkService, sitesService, authenticator, cfg.CORSAllowedOrigins)
 
 	server := &http.Server{
 		Addr:         listener.Addr().String(),
