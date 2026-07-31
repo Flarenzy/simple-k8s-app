@@ -47,6 +47,151 @@ Notes:
 - CI now publishes `linux/amd64` and `linux/arm64` manifests for the first-party images. On Apple Silicon, use immutable SHA tags plus `imagePullPolicy=Always` while validating fresh builds so the cluster does not reuse a cached `latest`.
 - Tagged releases also publish a signed OCI Helm chart to `oci://ghcr.io/flarenzy/charts/ipam`. The matching `.tgz`, `.prov`, and public signing key are attached to the GitHub Release so consumers can verify provenance with `helm verify`. The public key is committed at `docs/helm-release-public.asc`; for the full verification flow, see `docs/helm-release-verification.md`.
 
+## Deploying to kiac (Apple Containers)
+
+kiac provides Kubernetes nodes as Apple container VMs and includes a Traefik Gateway API stack when created with `--gateway`. The workflow below uses separate local hostnames for the frontend and API.
+
+Prereqs: Apple Silicon Mac, `container`, `kiac`, `kubectl`, `helm`, and an account with access to the repository's GHCR images.
+
+1. Create the cluster with Gateway API enabled:
+   ```bash
+   kiac create cluster --name dev --workers 1 --gateway
+   kubectl config use-context kiac-dev
+   ```
+
+2. Install Postgres and create the application DB secret:
+   ```bash
+   export POSTGRES_PASSWORD="yourpassword"
+   helm upgrade --install ipam-postgres bitnami/postgresql \
+     -n ipam --create-namespace \
+     --set auth.username=ipam \
+     --set auth.password="$POSTGRES_PASSWORD" \
+     --set auth.database=ipam
+
+   kubectl -n ipam create secret generic ipam-db \
+     --from-literal=DB_CONN="postgres://ipam:${POSTGRES_PASSWORD}@ipam-postgres-postgresql.ipam.svc.cluster.local:5432/ipam?sslmode=disable"
+   ```
+
+3. Push to `main` and wait for the CI `build-and-push` job to publish multi-architecture images. Use the commit SHA tag rather than `latest`:
+   ```bash
+   export IMAGE_TAG="<commit-sha>"
+   ```
+
+4. Deploy the chart through kiac's Gateway. The Gateway created by kiac is named `kiac` in namespace `kiac-gateway`:
+   ```bash
+   helm upgrade --install ipam deploy/helm/ipam \
+     -n ipam --create-namespace \
+     --set db.existingSecret=ipam-db \
+     --set httpRoute.enabled=true \
+     --set 'httpRoute.parentRefs[0].name=kiac' \
+     --set 'httpRoute.parentRefs[0].namespace=kiac-gateway' \
+     --set 'httpRoute.parentRefs[0].sectionName=http' \
+     --set-string "api.image.tag=$IMAGE_TAG" \
+     --set api.image.pullPolicy=Always \
+     --set-string "fe.image.tag=$IMAGE_TAG" \
+     --set fe.image.pullPolicy=Always \
+     --set-string "migrations.image.tag=$IMAGE_TAG" \
+     --set migrations.image.pullPolicy=Always \
+     --set-string 'api.env.CORS_ALLOWED_ORIGINS=http://simplek8sapp.lan' \
+     --set-string 'fe.env.VITE_API_BASE=http://api.simplek8sapp.lan/api/v1'
+   ```
+
+5. Add the Traefik LoadBalancer address to `/etc/hosts`:
+   ```bash
+   kubectl get svc -n kiac-gateway traefik
+   ```
+   Then add its `EXTERNAL-IP`:
+   ```text
+   <gateway-ip> simplek8sapp.lan api.simplek8sapp.lan
+   ```
+
+   Open `http://simplek8sapp.lan/` and check the API at `http://api.simplek8sapp.lan/healthz`.
+
+The kiac Gateway exposes HTTP by default. HTTPS requires configuring a TLS certificate and an HTTPS listener on the Gateway. Because the frontend and API use different hostnames, the API allows the frontend origin through `CORS_ALLOWED_ORIGINS`.
+
+### HTTPS on kiac with mkcert
+
+To use HTTPS locally, install and trust the mkcert CA, create one certificate for both application hostnames, and store it in the Gateway namespace:
+
+```bash
+mkcert -install
+CERT_DIR="$(mktemp -d)"
+mkcert -cert-file "$CERT_DIR/simplek8sapp.pem" \
+  -key-file "$CERT_DIR/simplek8sapp-key.pem" \
+  simplek8sapp.lan api.simplek8sapp.lan
+
+kubectl -n kiac-gateway create secret tls simplek8sapp-tls \
+  --cert="$CERT_DIR/simplek8sapp.pem" \
+  --key="$CERT_DIR/simplek8sapp-key.pem" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Add an HTTPS listener to kiac's Gateway. Leaving `hostname` unset allows both names on the certificate, including the apex frontend hostname:
+
+```bash
+kubectl -n kiac-gateway patch gateway kiac --type=json -p='[{"op":"add","path":"/spec/listeners/-","value":{"name":"https","port":443,"protocol":"HTTPS","tls":{"mode":"Terminate","certificateRefs":[{"kind":"Secret","name":"simplek8sapp-tls"}]},"allowedRoutes":{"namespaces":{"from":"All"}}}}]'
+```
+
+Redeploy the application routes and browser origins against the HTTPS listener:
+
+```bash
+helm upgrade --install ipam deploy/helm/ipam -n ipam --create-namespace \
+  --reuse-values \
+  --set-string 'httpRoute.parentRefs[0].name=kiac' \
+  --set-string 'httpRoute.parentRefs[0].namespace=kiac-gateway' \
+  --set-string 'httpRoute.parentRefs[0].sectionName=https' \
+  --set-string 'api.env.CORS_ALLOWED_ORIGINS=https://simplek8sapp.lan' \
+  --set-string 'fe.env.VITE_API_BASE=https://api.simplek8sapp.lan/api/v1'
+```
+
+Then open `https://simplek8sapp.lan/`. The API health check is available at `https://api.simplek8sapp.lan/healthz`.
+
+### HTTPS certificate runbook
+
+Check the certificate currently served by the Kubernetes Secret:
+
+```bash
+kubectl -n kiac-gateway get secret simplek8sapp-tls
+kubectl -n kiac-gateway get secret simplek8sapp-tls \
+  -o jsonpath='{.data.tls\.crt}' | base64 -D | \
+  openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+```
+
+Check that the Gateway and both routes are ready:
+
+```bash
+kubectl -n kiac-gateway get gateway kiac -o wide
+kubectl -n kiac-gateway get gateway kiac \
+  -o jsonpath='{range .status.listeners[*]}{.name}{": programmed="}{.conditions[?(@.type=="Programmed")].status}{", routes="}{.attachedRoutes}{"\n"}{end}'
+kubectl -n ipam get httproute ipam-fe ipam-api -o wide
+```
+
+Verify the certificate and application from the workstation:
+
+```bash
+openssl s_client -connect simplek8sapp.lan:443 \
+  -servername simplek8sapp.lan </dev/null 2>/dev/null | \
+  openssl x509 -noout -dates -subject -issuer
+curl -fsS https://simplek8sapp.lan/ >/dev/null && echo "frontend: OK"
+curl -fsS https://api.simplek8sapp.lan/healthz && echo " api: OK"
+```
+
+Refresh an expired or soon-to-expire certificate by generating a new leaf certificate and applying it to the existing Secret. The Gateway listener references the Secret by name, so it does not need to be patched again:
+
+```bash
+CERT_DIR="$(mktemp -d)"
+mkcert -cert-file "$CERT_DIR/simplek8sapp.pem" \
+  -key-file "$CERT_DIR/simplek8sapp-key.pem" \
+  simplek8sapp.lan api.simplek8sapp.lan
+
+kubectl -n kiac-gateway create secret tls simplek8sapp-tls \
+  --cert="$CERT_DIR/simplek8sapp.pem" \
+  --key="$CERT_DIR/simplek8sapp-key.pem" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS checks above. If the certificate is still rejected by the browser, reinstall the local CA with `mkcert -install` and restart the browser.
+
 ## Local Dev (Compose + Keycloak)
 
 - The recommended local dev stack is:
