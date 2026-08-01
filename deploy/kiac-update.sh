@@ -45,9 +45,9 @@ gateway_protocol="$(kubectl --context "$context" --namespace "$gateway_namespace
 [[ -n "$frontend_host" && -n "$gateway_protocol" ]] || { echo "The existing frontend route is not attached to a Gateway listener" >&2; exit 1; }
 
 if [[ -z "$keycloak_host" ]]; then
-	keycloak_host="$(kubectl --context "$context" --namespace "$namespace" get httproute "$release-keycloak" -o jsonpath='{.spec.hostnames[0]}')"
+	keycloak_host="$(kubectl --context "$context" --namespace "$namespace" get httproute "$release-keycloak" -o jsonpath='{.spec.hostnames[0]}' 2>/dev/null || true)"
 fi
-[[ -n "$keycloak_host" ]] || { echo "The existing Keycloak route has no hostname; set KIAC_KEYCLOAK_HOST to override it" >&2; exit 1; }
+keycloak_host="${keycloak_host:-keycloak.simplek8sapp.lan}"
 
 case "$gateway_protocol" in
 	HTTPS|https) scheme="https" ;;
