@@ -218,6 +218,23 @@ Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS 
     - `VITE_API_BASE=/api/v1`
 - The local Keycloak realm import comes from `dev/ipam-realm.json` and is scoped to `localhost:5173` / `127.0.0.1:5173`.
 
+## Integration Tests
+
+Run the PostgreSQL- and Keycloak-backed API suite with:
+
+```sh
+make test-integration
+```
+
+The command automatically uses a running Apple Container service on Apple silicon macOS, or Testcontainers with Docker/Podman elsewhere. Apple Container requires macOS 26 or later; install its signed package, then run `container system start`. Select a provider explicitly when both are installed:
+
+```sh
+INTEGRATION_CONTAINER_RUNTIME=apple make test-integration
+INTEGRATION_CONTAINER_RUNTIME=testcontainers make test-integration
+```
+
+The test output identifies the selected and detected runtimes. It fails with setup instructions when none is usable. See [the integration-test runtime guide](integration/context.md#container-runtime-compatibility) for image overrides, startup timeout configuration, registry authentication, cleanup, Apple Silicon behavior, and Docker/Podman fallback details.
+
 ## Optional: Keycloak
 
 - The supported Minikube + Keycloak topology uses two explicit hosts:
