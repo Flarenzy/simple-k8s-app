@@ -11,7 +11,7 @@ func TestLoadAutoPrefersRunningAppleRuntimeOnAppleSilicon(t *testing.T) {
 		AppleInstalled:       true,
 		AppleRunning:         true,
 		TestcontainersHint:   true,
-		TestcontainersDetail: "docker CLI detected",
+		TestcontainersDetail: "Docker-compatible endpoint detected",
 	}, "/usr/local/bin/container")
 	if err != nil {
 		t.Fatalf("load: %v", err)

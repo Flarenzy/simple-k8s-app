@@ -1093,7 +1093,7 @@ func (c *appleContainer) Logs(ctx context.Context) string {
 func (c *appleContainer) Terminate(ctx context.Context, _ ...testcontainers.TerminateOption) error {
 	stopOutput, stopErr := exec.CommandContext(ctx, c.binary, "stop", "--time", "10", c.name).CombinedOutput()
 	deleteOutput, deleteErr := exec.CommandContext(ctx, c.binary, "delete", "--force", c.name).CombinedOutput()
-	if stopErr == nil || deleteErr == nil || isAppleContainerNotFound(stopOutput) || isAppleContainerNotFound(deleteOutput) {
+	if deleteErr == nil || isAppleContainerNotFound(deleteOutput) {
 		activeAppleContainers.Delete(c.name)
 		return nil
 	}

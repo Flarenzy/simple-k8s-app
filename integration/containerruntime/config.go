@@ -3,6 +3,8 @@ package containerruntime
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,49 +152,71 @@ func detect(ctx context.Context) (Detection, string) {
 	}
 
 	if endpoint := strings.TrimSpace(os.Getenv("DOCKER_HOST")); endpoint != "" {
-		detection.TestcontainersHint = true
-		detection.TestcontainersDetail = "DOCKER_HOST is configured"
-		return detection, appleBinary
-	}
-
-	for _, binary := range []string{"docker", "podman"} {
-		if _, err := exec.LookPath(binary); err == nil {
+		if probeDockerEndpoint(endpoint) {
 			detection.TestcontainersHint = true
-			detection.TestcontainersDetail = binary + " CLI detected"
+			detection.TestcontainersDetail = "DOCKER_HOST endpoint detected"
 			return detection, appleBinary
 		}
 	}
 
 	for _, socket := range dockerSocketCandidates() {
-		if info, err := os.Stat(socket); err == nil && info.Mode()&os.ModeSocket != 0 {
+		if probeDockerEndpoint("unix://" + socket) {
 			detection.TestcontainersHint = true
-			detection.TestcontainersDetail = "Docker-compatible socket detected"
+			detection.TestcontainersDetail = "Docker-compatible endpoint detected"
 			break
 		}
 	}
-	if !detection.TestcontainersHint && hasTestcontainersDockerHost() {
-		detection.TestcontainersHint = true
-		detection.TestcontainersDetail = "docker.host is configured in ~/.testcontainers.properties"
+	if !detection.TestcontainersHint {
+		if endpoint := testcontainersDockerHost(); probeDockerEndpoint(endpoint) {
+			detection.TestcontainersHint = true
+			detection.TestcontainersDetail = "docker.host endpoint detected in ~/.testcontainers.properties"
+		}
 	}
 
 	return detection, appleBinary
 }
 
-func hasTestcontainersDockerHost() bool {
+func testcontainersDockerHost() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return false
+		return ""
 	}
 	contents, err := os.ReadFile(filepath.Join(home, ".testcontainers.properties"))
 	if err != nil {
-		return false
+		return ""
 	}
 	for _, line := range strings.Split(string(contents), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "docker.host=") {
-			return true
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "docker.host=") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "docker.host="))
 		}
 	}
-	return false
+	return ""
+}
+
+func probeDockerEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	var network, address string
+	switch parsed.Scheme {
+	case "unix":
+		network, address = "unix", parsed.Path
+	case "tcp", "http", "https":
+		network, address = "tcp", parsed.Host
+	default:
+		return false
+	}
+	if address == "" {
+		return false
+	}
+	conn, err := net.DialTimeout(network, address, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 func dockerSocketCandidates() []string {
