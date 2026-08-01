@@ -15,40 +15,50 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	containerruntime "github.com/Flarenzy/simple-k8s-app/integration/containerruntime"
 	app "github.com/Flarenzy/simple-k8s-app/internal/app"
+	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
-	postgresPort   = "5432/tcp"
-	keycloakPort   = "8080/tcp"
-	testRealm      = "ipam-integration"
-	testClientID   = "ipam-test"
-	testUsername   = "integration-user"
-	testPassword   = "integration-password"
-	testAudience   = "ipam-api"
-	containerReady = 2 * time.Minute
-	httpReady      = 30 * time.Second
+	postgresPort = "5432/tcp"
+	keycloakPort = "8080/tcp"
+	testRealm    = "ipam-integration"
+	testClientID = "ipam-test"
+	testUsername = "integration-user"
+	testPassword = "integration-password"
+	testAudience = "ipam-api"
+	httpReady    = 30 * time.Second
 )
+
+type managedContainer interface {
+	Terminate(context.Context, ...testcontainers.TerminateOption) error
+}
 
 type integrationSuite struct {
 	httpClient *http.Client
 	baseURL    string
 	issuerURL  string
 
-	postgres testcontainers.Container
-	keycloak testcontainers.Container
+	postgres managedContainer
+	keycloak managedContainer
 
 	apiCancel context.CancelFunc
 	apiErrCh  chan error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 type subnetResponse struct {
@@ -94,16 +104,39 @@ type tokenResponse struct {
 }
 
 var (
-	suiteOnce   sync.Once
-	suite       *integrationSuite
-	suiteErr    error
-	suiteClosed bool
+	suiteOnce             sync.Once
+	suite                 *integrationSuite
+	suiteErr              error
+	activeAppleContainers sync.Map
 )
 
 func TestMain(m *testing.M) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	go func() {
+		sig := <-signals
+		if suite != nil {
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Minute)
+			if err := suite.Close(closeCtx); err != nil {
+				fmt.Printf("integration teardown after %s failed: %v\n", sig, err)
+			}
+			closeCancel()
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+		if err := terminateActiveAppleContainers(cleanupCtx); err != nil {
+			fmt.Printf("integration active-container teardown after %s failed: %v\n", sig, err)
+		}
+		cleanupCancel()
+		if sig == syscall.SIGTERM {
+			os.Exit(143)
+		}
+		os.Exit(130)
+	}()
+
 	code := m.Run()
 
-	if suite != nil && !suiteClosed {
+	if suite != nil {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Minute)
 		defer closeCancel()
 		if err := suite.Close(closeCtx); err != nil {
@@ -112,8 +145,15 @@ func TestMain(m *testing.M) {
 				code = 1
 			}
 		}
-		suiteClosed = true
 	}
+	activeCleanupCtx, activeCleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+	if err := terminateActiveAppleContainers(activeCleanupCtx); err != nil {
+		fmt.Printf("integration active-container teardown failed: %v\n", err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	activeCleanupCancel()
 
 	os.Exit(code)
 }
@@ -626,35 +666,36 @@ func newIntegrationSuite(ctx context.Context) (*integrationSuite, error) {
 	if _, err := exec.LookPath("goose"); err != nil {
 		return nil, fmt.Errorf("goose not found in PATH: %w", err)
 	}
-	if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
-		return nil, fmt.Errorf("disable testcontainers ryuk: %w", err)
+	runtimeConfig, err := containerruntime.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("integration container runtime: %s\n", runtimeConfig.Summary())
+	if runtimeConfig.Runtime == containerruntime.RuntimeTestcontainers {
+		if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
+			return nil, fmt.Errorf("disable testcontainers ryuk: %w", err)
+		}
 	}
 
 	s := &integrationSuite{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
-	var err error
-	s.postgres, err = startPostgres(ctx)
+	var dsn string
+	s.postgres, dsn, err = startPostgres(ctx, runtimeConfig)
 	if err != nil {
-		return nil, err
-	}
-
-	dsn, err := buildPostgresDSN(ctx, s.postgres)
-	if err != nil {
-		_ = s.postgres.Terminate(ctx)
-		return nil, err
+		return nil, fmt.Errorf("%w (%s); %s", err, runtimeConfig.Summary(), runtimeConfig.Help())
 	}
 
 	if err = runGooseMigrations(ctx, dsn); err != nil {
 		_ = s.postgres.Terminate(ctx)
-		return nil, err
+		return nil, fmt.Errorf("%w (%s); %s", err, runtimeConfig.Summary(), runtimeConfig.Help())
 	}
 
-	s.keycloak, s.issuerURL, err = startKeycloak(ctx)
+	s.keycloak, s.issuerURL, err = startKeycloak(ctx, runtimeConfig)
 	if err != nil {
 		_ = s.postgres.Terminate(ctx)
-		return nil, err
+		return nil, fmt.Errorf("%w (%s); %s", err, runtimeConfig.Summary(), runtimeConfig.Help())
 	}
 
 	if err = s.startAPI(ctx, dsn); err != nil {
@@ -724,69 +765,92 @@ func (s *integrationSuite) waitForAPIReady(ctx context.Context) error {
 }
 
 func (s *integrationSuite) Close(ctx context.Context) error {
-	var errs []error
+	s.closeOnce.Do(func() {
+		var errs []error
 
-	if s.apiCancel != nil {
-		s.apiCancel()
-		select {
-		case err := <-s.apiErrCh:
-			if err != nil {
+		if s.apiCancel != nil {
+			s.apiCancel()
+			select {
+			case err := <-s.apiErrCh:
+				if err != nil {
+					errs = append(errs, err)
+				}
+			case <-time.After(10 * time.Second):
+				errs = append(errs, errors.New("timed out waiting for api shutdown"))
+			}
+		}
+
+		if s.keycloak != nil {
+			if err := s.keycloak.Terminate(ctx); err != nil {
 				errs = append(errs, err)
 			}
-		case <-time.After(10 * time.Second):
-			errs = append(errs, errors.New("timed out waiting for api shutdown"))
 		}
-	}
 
-	if s.keycloak != nil {
-		if err := s.keycloak.Terminate(ctx); err != nil {
-			errs = append(errs, err)
+		if s.postgres != nil {
+			if err := s.postgres.Terminate(ctx); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
 
-	if s.postgres != nil {
-		if err := s.postgres.Terminate(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return errors.Join(errs...)
+		s.closeErr = errors.Join(errs...)
+	})
+	return s.closeErr
 }
 
-func startPostgres(ctx context.Context) (testcontainers.Container, error) {
+func startPostgres(ctx context.Context, config containerruntime.Config) (managedContainer, string, error) {
+	if config.Runtime == containerruntime.RuntimeApple {
+		container, port, err := startAppleContainer(ctx, config, appleContainerRequest{
+			service:       "postgres",
+			image:         config.PostgresImage,
+			containerPort: 5432,
+			env: map[string]string{
+				"POSTGRES_DB":       "ipam",
+				"POSTGRES_USER":     "ipam",
+				"POSTGRES_PASSWORD": "ipam",
+			},
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("start postgres with Apple Container: %w", err)
+		}
+		dsn := fmt.Sprintf("postgres://ipam:ipam@127.0.0.1:%d/ipam?sslmode=disable", port)
+		if err := waitForPostgres(ctx, dsn, config.StartupTimeout); err != nil {
+			logs, cleanupErr := diagnoseAndTerminateAppleContainer(container)
+			return nil, "", fmt.Errorf("%w; postgres logs:\n%s%s", err, logs, cleanupFailure(cleanupErr))
+		}
+		return container, dsn, nil
+	}
+
 	req := testcontainers.ContainerRequest{
-		Image:        "postgres:16",
+		Image:        config.PostgresImage,
 		ExposedPorts: []string{postgresPort},
 		Env: map[string]string{
 			"POSTGRES_DB":       "ipam",
 			"POSTGRES_USER":     "ipam",
 			"POSTGRES_PASSWORD": "ipam",
 		},
-		WaitingFor: wait.ForListeningPort(postgresPort).WithStartupTimeout(containerReady),
+		WaitingFor: wait.ForListeningPort(postgresPort).WithStartupTimeout(config.StartupTimeout),
 	}
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	container, err := startTestcontainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("start postgres container: %w", err)
+		return nil, "", fmt.Errorf("start postgres with Testcontainers: %w", err)
 	}
 
-	return container, nil
-}
-
-func buildPostgresDSN(ctx context.Context, container testcontainers.Container) (string, error) {
 	host, err := container.Host(ctx)
 	if err != nil {
-		return "", fmt.Errorf("postgres host: %w", err)
+		_ = container.Terminate(ctx)
+		return nil, "", fmt.Errorf("postgres host: %w", err)
 	}
 	port, err := container.MappedPort(ctx, postgresPort)
 	if err != nil {
-		return "", fmt.Errorf("postgres mapped port: %w", err)
+		_ = container.Terminate(ctx)
+		return nil, "", fmt.Errorf("postgres mapped port: %w", err)
 	}
 
-	return fmt.Sprintf("postgres://ipam:ipam@%s:%s/ipam?sslmode=disable", host, port.Port()), nil
+	return container, fmt.Sprintf("postgres://ipam:ipam@%s:%s/ipam?sslmode=disable", host, port.Port()), nil
 }
 
 func runGooseMigrations(ctx context.Context, dsn string) error {
@@ -803,14 +867,66 @@ func runGooseMigrations(ctx context.Context, dsn string) error {
 	return nil
 }
 
-func startKeycloak(ctx context.Context) (testcontainers.Container, string, error) {
+func waitForPostgres(ctx context.Context, dsn string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		attemptTimeout := min(3*time.Second, time.Until(deadline))
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, attemptTimeout)
+		connection, err := pgx.Connect(attemptCtx, dsn)
+		if err == nil {
+			err = connection.Ping(attemptCtx)
+			connection.Close(attemptCtx)
+			attemptCancel()
+			if err == nil {
+				return nil
+			}
+		} else {
+			attemptCancel()
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("timed out after %s waiting for PostgreSQL readiness", timeout)
+}
+
+func startKeycloak(ctx context.Context, config containerruntime.Config) (managedContainer, string, error) {
 	realmPath, err := repoPath("integration", "api", "testdata", "ipam-integration-realm.json")
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve realm fixture: %w", err)
 	}
 
+	if config.Runtime == containerruntime.RuntimeApple {
+		container, port, err := startAppleContainer(ctx, config, appleContainerRequest{
+			service:       "keycloak",
+			image:         config.KeycloakImage,
+			containerPort: 8080,
+			memory:        "2g",
+			env: map[string]string{
+				"KEYCLOAK_ADMIN":          "admin",
+				"KEYCLOAK_ADMIN_PASSWORD": "admin",
+			},
+			mountSource: filepath.Dir(realmPath),
+			mountTarget: "/opt/keycloak/data/import",
+			command:     []string{"start-dev", "--http-port=8080", "--import-realm"},
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("start keycloak with Apple Container: %w", err)
+		}
+
+		issuerURL := fmt.Sprintf("http://127.0.0.1:%d/realms/%s", port, testRealm)
+		if err = waitForHTTP200(ctx, issuerURL+"/.well-known/openid-configuration", config.StartupTimeout); err != nil {
+			logs, cleanupErr := diagnoseAndTerminateAppleContainer(container)
+			return nil, "", fmt.Errorf("%w; keycloak logs:\n%s%s", err, logs, cleanupFailure(cleanupErr))
+		}
+		return container, issuerURL, nil
+	}
+
 	req := testcontainers.ContainerRequest{
-		Image:        "quay.io/keycloak/keycloak:24.0.5",
+		Image:        config.KeycloakImage,
 		ExposedPorts: []string{keycloakPort},
 		Env: map[string]string{
 			"KEYCLOAK_ADMIN":          "admin",
@@ -824,10 +940,10 @@ func startKeycloak(ctx context.Context) (testcontainers.Container, string, error
 				FileMode:          0o644,
 			},
 		},
-		WaitingFor: wait.ForListeningPort(keycloakPort).WithStartupTimeout(containerReady),
+		WaitingFor: wait.ForListeningPort(keycloakPort).WithStartupTimeout(config.StartupTimeout),
 	}
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	container, err := startTestcontainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
@@ -847,7 +963,7 @@ func startKeycloak(ctx context.Context) (testcontainers.Container, string, error
 	}
 
 	issuerURL := fmt.Sprintf("http://%s:%s/realms/%s", host, port.Port(), testRealm)
-	if err = waitForHTTP200(ctx, issuerURL+"/.well-known/openid-configuration"); err != nil {
+	if err = waitForHTTP200(ctx, issuerURL+"/.well-known/openid-configuration", config.StartupTimeout); err != nil {
 		_ = container.Terminate(ctx)
 		return nil, "", err
 	}
@@ -855,11 +971,26 @@ func startKeycloak(ctx context.Context) (testcontainers.Container, string, error
 	return container, issuerURL, nil
 }
 
-func waitForHTTP200(ctx context.Context, endpoint string) error {
+func startTestcontainer(ctx context.Context, request testcontainers.GenericContainerRequest) (container testcontainers.Container, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("container provider initialization panicked: %v", recovered)
+		}
+	}()
+	return testcontainers.GenericContainer(ctx, request)
+}
+
+func waitForHTTP200(ctx context.Context, endpoint string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 5 * time.Second}
-	deadline := time.Now().Add(httpReady)
+	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return err
@@ -874,10 +1005,138 @@ func waitForHTTP200(ctx context.Context, endpoint string) error {
 			}
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	return fmt.Errorf("timed out waiting for %s", endpoint)
+}
+
+type appleContainerRequest struct {
+	service       string
+	image         string
+	containerPort int
+	memory        string
+	env           map[string]string
+	mountSource   string
+	mountTarget   string
+	command       []string
+}
+
+type appleContainer struct {
+	binary string
+	name   string
+}
+
+func startAppleContainer(ctx context.Context, config containerruntime.Config, request appleContainerRequest) (*appleContainer, int, error) {
+	hostPort, err := availableLoopbackPort()
+	if err != nil {
+		return nil, 0, fmt.Errorf("reserve loopback port: %w", err)
+	}
+
+	name := fmt.Sprintf("ipam-it-%s-%d-%d", request.service, os.Getpid(), time.Now().UnixNano())
+	args := []string{
+		"run", "--detach", "--rm", "--progress", "none", "--name", name,
+		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", hostPort, request.containerPort),
+	}
+	if request.memory != "" {
+		args = append(args, "--memory", request.memory)
+	}
+	keys := make([]string, 0, len(request.env))
+	for key := range request.env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		args = append(args, "--env", key+"="+request.env[key])
+	}
+	if request.mountSource != "" {
+		args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s,readonly", request.mountSource, request.mountTarget))
+	}
+	args = append(args, request.image)
+	args = append(args, request.command...)
+
+	container := &appleContainer{binary: config.AppleBinary, name: name}
+	activeAppleContainers.Store(name, container)
+	runCtx, runCancel := context.WithTimeout(ctx, config.StartupTimeout)
+	defer runCancel()
+	cmd := exec.CommandContext(runCtx, config.AppleBinary, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanupErr := terminateAppleContainerAfterFailure(container)
+		return nil, 0, fmt.Errorf("%s run failed for image %s: %w: %s%s", config.AppleBinary, request.image, err, strings.TrimSpace(string(output)), cleanupFailure(cleanupErr))
+	}
+
+	return container, hostPort, nil
+}
+
+func availableLoopbackPort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+func (c *appleContainer) Logs(ctx context.Context) string {
+	output, err := exec.CommandContext(ctx, c.binary, "logs", c.name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("unable to read logs: %v: %s", err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func (c *appleContainer) Terminate(ctx context.Context, _ ...testcontainers.TerminateOption) error {
+	stopOutput, stopErr := exec.CommandContext(ctx, c.binary, "stop", "--time", "10", c.name).CombinedOutput()
+	deleteOutput, deleteErr := exec.CommandContext(ctx, c.binary, "delete", "--force", c.name).CombinedOutput()
+	if stopErr == nil || deleteErr == nil || isAppleContainerNotFound(stopOutput) || isAppleContainerNotFound(deleteOutput) {
+		activeAppleContainers.Delete(c.name)
+		return nil
+	}
+	return fmt.Errorf("clean up Apple container %s: stop: %v: %s; delete: %v: %s", c.name, stopErr, strings.TrimSpace(string(stopOutput)), deleteErr, strings.TrimSpace(string(deleteOutput)))
+}
+
+func terminateActiveAppleContainers(ctx context.Context) error {
+	var errs []error
+	activeAppleContainers.Range(func(_, value any) bool {
+		container, ok := value.(*appleContainer)
+		if ok {
+			if err := container.Terminate(ctx); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return true
+	})
+	return errors.Join(errs...)
+}
+
+func diagnoseAndTerminateAppleContainer(container *appleContainer) (string, error) {
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cleanupCancel()
+	logs := container.Logs(cleanupCtx)
+	return logs, container.Terminate(cleanupCtx)
+}
+
+func terminateAppleContainerAfterFailure(container *appleContainer) error {
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cleanupCancel()
+	return container.Terminate(cleanupCtx)
+}
+
+func cleanupFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("; cleanup failed: %v", err)
+}
+
+func isAppleContainerNotFound(output []byte) bool {
+	message := strings.ToLower(string(output))
+	return strings.Contains(message, "not found") || strings.Contains(message, "does not exist")
 }
 
 func (s *integrationSuite) mustToken(t *testing.T) string {
