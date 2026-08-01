@@ -7,6 +7,8 @@ type Props = { subnets: Subnet[]; sites: SiteStatistics[]; summaries: Record<num
 const statusLabels: Record<KubernetesServiceStatus, string> = { matched: "matched", unmatched: "unmatched", ambiguous: "ambiguous", no_usable_ip: "no usable IP" };
 
 function ServiceSummary({ summary }: { summary?: KubernetesServiceSummary }) {
+	if (!summary) return <span className="muted">Loading Services…</span>;
+	if (summary.state === "unavailable") return <span className="muted">Kubernetes discovery unavailable</span>;
 	if (!summary?.count) return <span className="muted">No Services observed</span>;
 	return <span className="service-summary"><strong>{summary.count} Service{summary.count === 1 ? "" : "s"} observed</strong>{Object.entries(summary.statuses).map(([status, count]) => <span className={`service-status service-status--${status}`} key={status}>{count} {statusLabels[status as KubernetesServiceStatus]}</span>)}</span>;
 }

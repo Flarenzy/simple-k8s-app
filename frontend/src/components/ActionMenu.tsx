@@ -46,6 +46,7 @@ export default function ActionMenu({ label, onEdit, onDelete }: Props) {
 
 	const choose = (action?: () => void) => {
 		setOpen(false);
+		triggerRef.current?.focus();
 		action?.();
 	};
 

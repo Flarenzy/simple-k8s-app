@@ -67,6 +67,7 @@ export type KubernetesServiceObservation = Omit<KubernetesService, "matched_addr
 export type KubernetesServiceSummary = {
 	count: number;
 	statuses: Partial<Record<KubernetesServiceStatus, number>>;
+	state?: "ready" | "unavailable";
 };
 
 export type Site = {

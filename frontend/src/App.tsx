@@ -40,7 +40,16 @@ export default function App() {
 	const [authReady, setAuthReady] = useState(!keycloakEnabled);
 	const [authError, setAuthError] = useState<string | null>(null);
 	const requester = useCallback<Requester>(async (input, init = {}) => { const client = keycloak; const token = client?.token; if (client && client.isTokenExpired(30)) { try { await client.updateToken(30); } catch { setAuthError("Your session has expired."); } } const headers = new Headers(init.headers); if (client?.token || token) headers.set("Authorization", `Bearer ${client?.token || token}`); return fetch(input, { ...init, headers }); }, []);
-	const refresh = useCallback(async () => { setLoading(true); setError(null); try { const [nextSubnets, nextSites] = await Promise.all([api.subnets(requester), api.siteStatistics(requester)]); setSubnets(nextSubnets); setSites(nextSites); setUsage(Object.fromEntries(nextSubnets.map((subnet) => [subnet.id, { used: subnet.used_ips, total: subnet.total_ips }]))); const summaries = await Promise.all(nextSubnets.map(async (subnet) => { try { return [subnet.id, summarizeServices(await api.kubernetesServices(requester, subnet.id))] as const; } catch { return [subnet.id, { count: 0, statuses: {} }] as const; } })); setServiceSummaries(Object.fromEntries(summaries)); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load inventory"); } finally { setLoading(false); } }, [requester]);
+	const refresh = useCallback(async () => { setLoading(true); setError(null); try { const [nextSubnets, nextSites] = await Promise.all([api.subnets(requester), api.siteStatistics(requester)]); setSubnets(nextSubnets); setSites(nextSites); setUsage(Object.fromEntries(nextSubnets.map((subnet) => [subnet.id, { used: subnet.used_ips, total: subnet.total_ips }]))); setServiceSummaries({}); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load inventory"); } finally { setLoading(false); } }, [requester]);
+	useEffect(() => {
+		if ((view !== "dashboard" && view !== "subnets") || !subnets.length) return;
+		let cancelled = false;
+		void Promise.all(subnets.map(async (subnet) => {
+			try { return [subnet.id, { ...summarizeServices(await api.kubernetesServices(requester, subnet.id)), state: "ready" }] as const; }
+			catch { return [subnet.id, { count: 0, statuses: {}, state: "unavailable" }] as const; }
+		})).then((summaries) => { if (!cancelled) setServiceSummaries(Object.fromEntries(summaries)); });
+		return () => { cancelled = true; };
+	}, [requester, subnets, view]);
 	useEffect(() => { let cancelled = false; if (!keycloakEnabled) { void refresh(); return; } initKeycloak().then((authenticated) => { if (cancelled) return; if (!authenticated) { setAuthError("Not authenticated"); return; } setAuthReady(true); void refresh(); }).catch((err) => { if (!cancelled) setAuthError(err instanceof Error ? err.message : "Unable to sign in"); }); return () => { cancelled = true; }; }, [refresh]);
 	const username = keycloak?.tokenParsed?.preferred_username || keycloak?.tokenParsed?.name || "Account";
 	const roles = keycloakEnabled ? rolesFromToken(keycloak?.tokenParsed, roleClientId) : localAdminRoles;
