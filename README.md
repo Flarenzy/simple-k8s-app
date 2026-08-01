@@ -59,9 +59,13 @@ Prereqs: Apple Silicon Mac, `container`, `kiac`, `kubectl`, `helm`, and an accou
    kubectl config use-context kiac-dev
    ```
 
-2. Install Postgres and create the application DB secret:
+2. Install Postgres and create the database, Keycloak bootstrap, and application-admin secrets. The two Keycloak identities are deliberately separate: `keycloak-bootstrap` belongs to the master realm and Admin Console, while `admin` is the IPAM application user in the `ipam` realm.
    ```bash
    export POSTGRES_PASSWORD="yourpassword"
+   export KEYCLOAK_BOOTSTRAP_USERNAME="keycloak-bootstrap"
+   export KEYCLOAK_BOOTSTRAP_PASSWORD="$(openssl rand -base64 32)"
+   export IPAM_ADMIN_PASSWORD="$(openssl rand -base64 32)"
+
    helm upgrade --install ipam-postgres bitnami/postgresql \
      -n ipam --create-namespace \
      --set auth.username=ipam \
@@ -70,30 +74,36 @@ Prereqs: Apple Silicon Mac, `container`, `kiac`, `kubectl`, `helm`, and an accou
 
    kubectl -n ipam create secret generic ipam-db \
      --from-literal=DB_CONN="postgres://ipam:${POSTGRES_PASSWORD}@ipam-postgres-postgresql.ipam.svc.cluster.local:5432/ipam?sslmode=disable"
+
+   kubectl -n ipam create secret generic keycloak-db \
+     --from-literal=password="$POSTGRES_PASSWORD"
+   kubectl -n ipam create secret generic keycloak-bootstrap \
+     --from-literal=username="$KEYCLOAK_BOOTSTRAP_USERNAME" \
+     --from-literal=password="$KEYCLOAK_BOOTSTRAP_PASSWORD"
+   kubectl -n ipam create secret generic ipam-application-admin \
+     --from-literal=password="$IPAM_ADMIN_PASSWORD"
+   kubectl -n ipam create configmap ipam-realm \
+     --from-file=ipam-realm.json=dev/example-prod-realm.json
    ```
+
+   Keep the generated values until the first login succeeds, then store or rotate them through Keycloak. They are not checked into Helm values or realm JSON.
 
 3. Push to `main` and wait for the CI `build-and-push` job to publish multi-architecture images. Use the commit SHA tag rather than `latest`:
    ```bash
    export IMAGE_TAG="<commit-sha>"
    ```
 
-4. Deploy the chart through kiac's Gateway. The Gateway created by kiac is named `kiac` in namespace `kiac-gateway`:
+4. Deploy the chart through kiac's Gateway with the local SSO profile. The Gateway created by kiac is named `kiac` in namespace `kiac-gateway`; `values-kiac.yaml` enables the application, API, and Keycloak routes plus the `ipam` realm/client configuration:
    ```bash
    helm upgrade --install ipam deploy/helm/ipam \
      -n ipam --create-namespace \
-     --set db.existingSecret=ipam-db \
-     --set httpRoute.enabled=true \
-     --set 'httpRoute.parentRefs[0].name=kiac' \
-     --set 'httpRoute.parentRefs[0].namespace=kiac-gateway' \
-     --set 'httpRoute.parentRefs[0].sectionName=http' \
+     -f values-kiac.yaml \
      --set-string "api.image.tag=$IMAGE_TAG" \
      --set api.image.pullPolicy=Always \
      --set-string "fe.image.tag=$IMAGE_TAG" \
      --set fe.image.pullPolicy=Always \
      --set-string "migrations.image.tag=$IMAGE_TAG" \
-     --set migrations.image.pullPolicy=Always \
-     --set-string 'api.env.CORS_ALLOWED_ORIGINS=http://simplek8sapp.lan' \
-     --set-string 'fe.env.VITE_API_BASE=http://api.simplek8sapp.lan/api/v1'
+     --set migrations.image.pullPolicy=Always
    ```
 
 5. Add the Traefik LoadBalancer address to `/etc/hosts`:
@@ -102,23 +112,23 @@ Prereqs: Apple Silicon Mac, `container`, `kiac`, `kubectl`, `helm`, and an accou
    ```
    Then add its `EXTERNAL-IP`:
    ```text
-   <gateway-ip> simplek8sapp.lan api.simplek8sapp.lan
+   <gateway-ip> simplek8sapp.lan api.simplek8sapp.lan keycloak.simplek8sapp.lan
    ```
 
-   Open `http://simplek8sapp.lan/` and check the API at `http://api.simplek8sapp.lan/healthz`.
+   Open `http://simplek8sapp.lan/` and sign in as the application user `admin` with `$IPAM_ADMIN_PASSWORD`. Keycloak is browser-reachable at `http://keycloak.simplek8sapp.lan/`; its master-realm Admin Console uses the separate `$KEYCLOAK_BOOTSTRAP_USERNAME` account. Check the API at `http://api.simplek8sapp.lan/healthz` and realm discovery at `http://keycloak.simplek8sapp.lan/realms/ipam/.well-known/openid-configuration`.
 
-The kiac Gateway exposes HTTP by default. HTTPS requires configuring a TLS certificate and an HTTPS listener on the Gateway. Because the frontend and API use different hostnames, the API allows the frontend origin through `CORS_ALLOWED_ORIGINS`.
+The kiac profile is intentionally local-only and uses the Gateway's default HTTP listener. Do not copy its hostnames or credentials into production. HTTPS requires configuring a TLS certificate and an HTTPS listener on the Gateway. Because the frontend and API use different hostnames, the API allows only the configured frontend origin through `CORS_ALLOWED_ORIGINS`.
 
 ### HTTPS on kiac with mkcert
 
-To use HTTPS locally, install and trust the mkcert CA, create one certificate for both application hostnames, and store it in the Gateway namespace:
+To use HTTPS locally, install and trust the mkcert CA, create one certificate for the frontend, API, and Keycloak hostnames, and store it in the Gateway namespace:
 
 ```bash
 mkcert -install
 CERT_DIR="$(mktemp -d)"
 mkcert -cert-file "$CERT_DIR/simplek8sapp.pem" \
   -key-file "$CERT_DIR/simplek8sapp-key.pem" \
-  simplek8sapp.lan api.simplek8sapp.lan
+  simplek8sapp.lan api.simplek8sapp.lan keycloak.simplek8sapp.lan
 
 kubectl -n kiac-gateway create secret tls simplek8sapp-tls \
   --cert="$CERT_DIR/simplek8sapp.pem" \
@@ -141,7 +151,10 @@ helm upgrade --install ipam deploy/helm/ipam -n ipam --create-namespace \
   --set-string 'httpRoute.parentRefs[0].namespace=kiac-gateway' \
   --set-string 'httpRoute.parentRefs[0].sectionName=https' \
   --set-string 'api.env.CORS_ALLOWED_ORIGINS=https://simplek8sapp.lan' \
-  --set-string 'fe.env.VITE_API_BASE=https://api.simplek8sapp.lan/api/v1'
+  --set-string 'api.auth.issuer=https://keycloak.simplek8sapp.lan/realms/ipam' \
+  --set-string 'fe.env.VITE_API_BASE=https://api.simplek8sapp.lan/api/v1' \
+  --set-string 'fe.env.VITE_KEYCLOAK_URL=https://keycloak.simplek8sapp.lan' \
+  --set-string 'keycloak.hostname.url=https://keycloak.simplek8sapp.lan'
 ```
 
 Then open `https://simplek8sapp.lan/`. The API health check is available at `https://api.simplek8sapp.lan/healthz`.
@@ -157,13 +170,13 @@ kubectl -n kiac-gateway get secret simplek8sapp-tls \
   openssl x509 -noout -subject -issuer -dates -ext subjectAltName
 ```
 
-Check that the Gateway and both routes are ready:
+Check that the Gateway and all three routes are ready:
 
 ```bash
 kubectl -n kiac-gateway get gateway kiac -o wide
 kubectl -n kiac-gateway get gateway kiac \
   -o jsonpath='{range .status.listeners[*]}{.name}{": programmed="}{.conditions[?(@.type=="Programmed")].status}{", routes="}{.attachedRoutes}{"\n"}{end}'
-kubectl -n ipam get httproute ipam-fe ipam-api -o wide
+kubectl -n ipam get httproute ipam-fe ipam-api ipam-keycloak -o wide
 ```
 
 Verify the certificate and application from the workstation:
@@ -174,6 +187,7 @@ openssl s_client -connect simplek8sapp.lan:443 \
   openssl x509 -noout -dates -subject -issuer
 curl -fsS https://simplek8sapp.lan/ >/dev/null && echo "frontend: OK"
 curl -fsS https://api.simplek8sapp.lan/healthz && echo " api: OK"
+curl -fsS https://keycloak.simplek8sapp.lan/realms/ipam/.well-known/openid-configuration >/dev/null && echo " discovery: OK"
 ```
 
 Refresh an expired or soon-to-expire certificate by generating a new leaf certificate and applying it to the existing Secret. The Gateway listener references the Secret by name, so it does not need to be patched again:
@@ -182,7 +196,7 @@ Refresh an expired or soon-to-expire certificate by generating a new leaf certif
 CERT_DIR="$(mktemp -d)"
 mkcert -cert-file "$CERT_DIR/simplek8sapp.pem" \
   -key-file "$CERT_DIR/simplek8sapp-key.pem" \
-  simplek8sapp.lan api.simplek8sapp.lan
+  simplek8sapp.lan api.simplek8sapp.lan keycloak.simplek8sapp.lan
 
 kubectl -n kiac-gateway create secret tls simplek8sapp-tls \
   --cert="$CERT_DIR/simplek8sapp.pem" \
@@ -195,10 +209,11 @@ Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS 
 ## Local Dev (Compose + Keycloak)
 
 - The recommended local dev stack is:
-  1. `make dev-up`
-  2. `make db-migrate`
-  3. `make run`
-  4. open `http://localhost:5173`
+  1. Export `KEYCLOAK_BOOTSTRAP_PASSWORD` and `IPAM_ADMIN_PASSWORD` with generated local values, for example `$(openssl rand -base64 32)`.
+  2. `make dev-up`
+  3. `make db-migrate`
+  4. `make run`
+  5. open `http://localhost:5173` and sign in as the application user `admin` with `$IPAM_ADMIN_PASSWORD`
 - `make dev-up` starts Postgres and Keycloak from `dev/docker-compose.yaml` on:
   - `localhost:5432`
   - `localhost:8080`
@@ -215,8 +230,13 @@ Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS 
     - `VITE_KEYCLOAK_URL=http://localhost:8080`
     - `VITE_KEYCLOAK_REALM=ipam`
     - `VITE_KEYCLOAK_CLIENT_ID=ipam-fe`
+    - `VITE_KEYCLOAK_ROLE_CLIENT_ID=ipam-api`
     - `VITE_API_BASE=/api/v1`
 - The local Keycloak realm import comes from `dev/ipam-realm.json` and is scoped to `localhost:5173` / `127.0.0.1:5173`.
+
+## Application roles
+
+Keycloak assigns client roles on `ipam-api`; the API does not treat master-realm or Admin Console privileges as application access. `admin` can read, create, edit, and delete; `editor` can read, create, and edit but cannot delete; `read-only` can only read. Authenticated users without one of these roles receive `403 Forbidden`. When authentication is intentionally disabled, the application uses the local identity and role `admin` so existing local workflows retain full access. Health, readiness, Swagger, CORS preflight, and Keycloak's realm discovery remain reachable without an application token.
 
 ## Kubernetes Service discovery
 
@@ -309,12 +329,17 @@ The test output identifies the selected and detected runtimes. It fails with set
   - `keycloak.local` for the Keycloak ingress
 - For current Keycloak releases, the recommended local setup is HTTPS on both ingresses. Use local TLS secrets (for example via `mkcert`) and keep `keycloak.proxy.headers=xforwarded` so Keycloak trusts the forwarded host/scheme headers from ingress-nginx.
 - Do not leave `keycloak.ingress.host` empty when the main app ingress is also enabled. A hostless `/` Keycloak ingress can conflict with the hostless app ingress.
-- Create a Keycloak DB secret first. This secret must contain the DB password under the key used by `keycloak.db.passwordKey` (defaults to `password`):
+- Create separate Keycloak DB, master-realm bootstrap, and application-admin secrets first. The realm import resolves the IPAM `admin` password from the last secret, so no password is stored in the realm JSON:
   ```bash
   kubectl -n ipam create secret generic keycloak-db \
     --from-literal=password="$POSTGRES_PASSWORD"
+  kubectl -n ipam create secret generic keycloak-bootstrap \
+    --from-literal=username=keycloak-bootstrap \
+    --from-literal=password="$KEYCLOAK_BOOTSTRAP_PASSWORD"
+  kubectl -n ipam create secret generic ipam-application-admin \
+    --from-literal=password="$IPAM_ADMIN_PASSWORD"
   ```
-- Create a realm configmap if you want to auto-import the Helm-oriented sample realm (this file matches `ipam.local` and `keycloak.local`, and includes a demo user `devuser` / `devpassword`):
+- Create a realm configmap if you want to auto-import the Helm-oriented sample realm. This file includes the `ipam-api` application roles and creates the IPAM user `admin` from `$IPAM_ADMIN_PASSWORD`:
   ```bash
   kubectl -n ipam create configmap ipam-realm --from-file=ipam-realm.json=dev/example-prod-realm.json
   ```
@@ -346,6 +371,8 @@ The test output identifies the selected and detected runtimes. It fails with set
      --set api.auth.audience=ipam-api \
      --set api.auth.jwksURL=http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs \
      --set keycloak.enabled=true \
+     --set keycloak.admin.existingSecret=keycloak-bootstrap \
+     --set keycloak.applicationAdmin.existingSecret=ipam-application-admin \
      --set keycloak.db.existingSecret=keycloak-db \
      --set keycloak.hostname.url=https://keycloak.local \
      --set keycloak.ingress.enabled=true \

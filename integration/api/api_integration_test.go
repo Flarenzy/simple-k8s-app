@@ -37,14 +37,16 @@ import (
 )
 
 const (
-	postgresPort = "5432/tcp"
-	keycloakPort = "8080/tcp"
-	testRealm    = "ipam-integration"
-	testClientID = "ipam-test"
-	testUsername = "integration-user"
-	testPassword = "integration-password"
-	testAudience = "ipam-api"
-	httpReady    = 30 * time.Second
+	postgresPort   = "5432/tcp"
+	keycloakPort   = "8080/tcp"
+	testRealm      = "ipam-integration"
+	testClientID   = "ipam-test"
+	testUsername   = "integration-user"
+	readerUsername = "integration-reader"
+	editorUsername = "integration-editor"
+	testPassword   = "integration-password"
+	testAudience   = "ipam-api"
+	httpReady      = 30 * time.Second
 )
 
 type managedContainer interface {
@@ -313,6 +315,50 @@ func TestInfrastructureAndAuthBoundaries(t *testing.T) {
 
 	var subnets []subnetResponse
 	s.decodeJSON(t, resp, &subnets)
+}
+
+func TestApplicationRoleAuthorization(t *testing.T) {
+	s := mustSuite(t)
+	readerToken := s.mustTokenFor(t, readerUsername)
+	editorToken := s.mustTokenFor(t, editorUsername)
+	adminToken := s.mustToken(t)
+
+	resp, err := s.get(t, "/api/v1/sites", readerToken)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("read-only list: status=%v err=%v", resp.StatusCode, err)
+	}
+	s.closeBody(t, resp)
+
+	resp, err = s.jsonRequest(t, http.MethodPost, "/api/v1/sites", readerToken, map[string]any{"name": "Forbidden reader site"})
+	if err != nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("read-only create: status=%v err=%v", resp.StatusCode, err)
+	}
+	s.closeBody(t, resp)
+
+	resp, err = s.jsonRequest(t, http.MethodPost, "/api/v1/sites", editorToken, map[string]any{"name": "Editor site"})
+	if err != nil || resp.StatusCode != http.StatusCreated {
+		t.Fatalf("editor create: status=%v err=%v", resp.StatusCode, err)
+	}
+	var site siteResponse
+	s.decodeJSON(t, resp, &site)
+
+	resp, err = s.jsonRequest(t, http.MethodPatch, "/api/v1/sites/"+site.ID, editorToken, map[string]any{"name": "Edited site"})
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("editor update: status=%v err=%v", resp.StatusCode, err)
+	}
+	s.closeBody(t, resp)
+
+	resp, err = s.request(t, http.MethodDelete, "/api/v1/sites/"+site.ID, editorToken, nil)
+	if err != nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("editor delete: status=%v err=%v", resp.StatusCode, err)
+	}
+	s.closeBody(t, resp)
+
+	resp, err = s.request(t, http.MethodDelete, "/api/v1/sites/"+site.ID, adminToken, nil)
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("admin delete: status=%v err=%v", resp.StatusCode, err)
+	}
+	s.closeBody(t, resp)
 }
 
 func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
@@ -1460,12 +1506,16 @@ func isAppleContainerNotFound(output []byte) bool {
 }
 
 func (s *integrationSuite) mustToken(t *testing.T) string {
+	return s.mustTokenFor(t, testUsername)
+}
+
+func (s *integrationSuite) mustTokenFor(t *testing.T, username string) string {
 	t.Helper()
 
 	form := url.Values{
 		"grant_type": {"password"},
 		"client_id":  {testClientID},
-		"username":   {testUsername},
+		"username":   {username},
 		"password":   {testPassword},
 	}
 

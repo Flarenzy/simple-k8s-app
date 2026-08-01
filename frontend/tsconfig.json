@@ -4,6 +4,8 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": true,
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -13,5 +15,6 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.js"]
 }

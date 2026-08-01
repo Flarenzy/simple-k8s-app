@@ -31,18 +31,34 @@
       ]
     }
   ],
+  "roles": {
+    "client": {
+      "ipam-api": [
+        { "name": "admin", "description": "Full access to IPAM" },
+        { "name": "read-only", "description": "Read-only access to IPAM" },
+        { "name": "editor", "description": "Read, create, and edit access without delete" }
+      ]
+    }
+  },
   "users": [
     {
-      "username": "devuser",
+      "username": "admin",
       "enabled": true,
+      "firstName": "IPAM",
+      "lastName": "Administrator",
+      "email": "admin@ipam.local",
       "emailVerified": true,
+      "requiredActions": [],
       "credentials": [
         {
           "type": "password",
-          "value": "devpassword",
+          "value": "${IPAM_ADMIN_PASSWORD}",
           "temporary": false
         }
-      ]
+      ],
+      "clientRoles": {
+        "ipam-api": ["admin"]
+      }
     }
   ]
 }

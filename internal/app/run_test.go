@@ -93,6 +93,16 @@ func TestNewAuthenticatorEnabledWithoutIssuerFails(t *testing.T) {
 	}
 }
 
+func TestNewAuthenticatorEnabledWithoutAudienceFails(t *testing.T) {
+	_, err := newAuthenticator(context.Background(), Config{
+		AuthEnabled: true,
+		Issuer:      "https://issuer.example",
+	})
+	if err == nil {
+		t.Fatal("expected error when auth is enabled without audience")
+	}
+}
+
 func TestRunReturnsListenErrorForInvalidPort(t *testing.T) {
 	err := Run(context.Background(), Config{Port: "invalid-port"})
 	if err == nil {

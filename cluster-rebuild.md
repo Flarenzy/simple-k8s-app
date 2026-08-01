@@ -63,17 +63,27 @@ helm upgrade --install ipam-postgres bitnami/postgresql \
 ## 7. Create app and Keycloak secrets
 
 ```bash
+export KEYCLOAK_BOOTSTRAP_PASSWORD="$(openssl rand -base64 32)"
+export IPAM_ADMIN_PASSWORD="$(openssl rand -base64 32)"
+
 kubectl -n ipam create secret generic ipam-db \
   --from-literal=DB_CONN="postgres://ipam:${POSTGRES_PASSWORD}@ipam-postgres-postgresql.ipam.svc.cluster.local:5432/ipam?sslmode=disable"
 
 kubectl -n ipam create secret generic keycloak-db \
   --from-literal=password="$POSTGRES_PASSWORD"
+
+kubectl -n ipam create secret generic keycloak-bootstrap \
+  --from-literal=username=keycloak-bootstrap \
+  --from-literal=password="$KEYCLOAK_BOOTSTRAP_PASSWORD"
+
+kubectl -n ipam create secret generic ipam-application-admin \
+  --from-literal=password="$IPAM_ADMIN_PASSWORD"
 ```
 
 If the secrets already exist and you are re-running this, delete and recreate them:
 
 ```bash
-kubectl -n ipam delete secret ipam-db keycloak-db
+kubectl -n ipam delete secret ipam-db keycloak-db keycloak-bootstrap ipam-application-admin
 ```
 
 Then run the create commands again.
@@ -136,9 +146,9 @@ https://ipam.local/
 https://keycloak.local/
 ```
 
-Sample realm credentials:
+Application realm credentials:
 
 ```text
-username: devuser
-password: devpassword
+application username: admin
+application password: use the value stored in the ipam-application-admin Secret
 ```

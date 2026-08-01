@@ -1,0 +1,63 @@
+db:
+  existingSecret: ipam-db
+
+api:
+  auth:
+    enabled: true
+    issuer: "http://keycloak.simplek8sapp.lan/realms/ipam"
+    audience: "ipam-api"
+    jwksURL: "http://ipam-keycloak:8080/realms/ipam/protocol/openid-connect/certs"
+  env:
+    CORS_ALLOWED_ORIGINS: "http://simplek8sapp.lan"
+
+fe:
+  env:
+    VITE_KEYCLOAK_URL: "http://keycloak.simplek8sapp.lan"
+    VITE_KEYCLOAK_REALM: "ipam"
+    VITE_KEYCLOAK_CLIENT_ID: "ipam-fe"
+    VITE_KEYCLOAK_ROLE_CLIENT_ID: "ipam-api"
+    VITE_API_BASE: "http://api.simplek8sapp.lan/api/v1"
+
+keycloak:
+  enabled: true
+  admin:
+    username: keycloak-bootstrap
+    existingSecret: keycloak-bootstrap
+    usernameKey: username
+    passwordKey: password
+  applicationAdmin:
+    existingSecret: ipam-application-admin
+    passwordKey: password
+  db:
+    host: ipam-postgres-postgresql
+    port: 5432
+    database: ipam
+    user: ipam
+    existingSecret: keycloak-db
+    passwordKey: password
+  hostname:
+    strict: false
+    url: "http://keycloak.simplek8sapp.lan"
+  realmImport:
+    enabled: true
+    configMapName: ipam-realm
+    mountPath: /opt/keycloak/data/import
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: kiac
+      namespace: kiac-gateway
+      sectionName: http
+  frontend:
+    hostnames:
+      - simplek8sapp.lan
+    path: /
+  api:
+    hostnames:
+      - api.simplek8sapp.lan
+    path: /
+  keycloak:
+    hostnames:
+      - keycloak.simplek8sapp.lan
+    path: /

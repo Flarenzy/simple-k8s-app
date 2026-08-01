@@ -248,6 +248,9 @@
             "VITE_KEYCLOAK_CLIENT_ID": {
               "type": "string"
             },
+            "VITE_KEYCLOAK_ROLE_CLIENT_ID": {
+              "type": "string"
+            },
             "VITE_API_BASE": {
               "type": "string"
             }
@@ -356,7 +359,25 @@
             "username": {
               "type": "string"
             },
-            "password": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "usernameKey": {
+              "type": "string"
+            },
+            "passwordKey": {
+              "type": "string"
+            }
+          }
+        },
+        "applicationAdmin": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "passwordKey": {
               "type": "string"
             }
           }
@@ -625,6 +646,17 @@
           }
         },
         "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hostnames": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "path": { "type": "string" }
+          }
+        },
+        "keycloak": {
           "type": "object",
           "additionalProperties": false,
           "properties": {

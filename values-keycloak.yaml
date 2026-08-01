@@ -33,15 +33,20 @@ keycloak:
   enabled: true
   replicaCount: 1
   image:
-    repository: keycloak/keycloak
-    tag: "24.0.0"
+    repository: quay.io/keycloak/keycloak
+    tag: "24.0.5"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 8080
   admin:
-    username: admin
-    password: changeme
+    username: keycloak-bootstrap
+    existingSecret: keycloak-bootstrap
+    usernameKey: username
+    passwordKey: password
+  applicationAdmin:
+    existingSecret: ipam-application-admin
+    passwordKey: password
   db:
     host: "ipam-postgres-postgresql"
     port: 5432
@@ -76,4 +81,5 @@ fe:
     VITE_KEYCLOAK_URL: "https://keycloak.local"
     VITE_KEYCLOAK_REALM: "ipam"
     VITE_KEYCLOAK_CLIENT_ID: "ipam-fe"
+    VITE_KEYCLOAK_ROLE_CLIENT_ID: "ipam-api"
     VITE_API_BASE: "/api/v1"
