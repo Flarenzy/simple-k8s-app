@@ -18,7 +18,7 @@ FUZZ_TARGETS := \
 	./internal/domain:FuzzValidateIPInSubnet \
 	./internal/domain:FuzzCSVImport
 
-.PHONY: docs format run run-api test test-integration test-fuzz test-all
+.PHONY: docs format run run-api test test-integration test-fuzz test-all kiac-deploy
 
 ## ------------------------------
 ## App commands
@@ -75,6 +75,13 @@ docker-migrate:
 	docker build -f deploy/docker/Dockerfile.migrate -t $(APP_NAME)-migrate:latest .
 
 docker-all: docker-api docker-fe docker-migrate
+
+## ------------------------------
+## Local kiac deployment
+## ------------------------------
+
+kiac-deploy:
+	@./deploy/kiac-update.sh
 
 ## ------------------------------
 ## Dev stack (docker-compose)

@@ -246,6 +246,10 @@ The API records periodic IPv4 subnet-usage snapshots and shows the first history
 
 Snapshot capture counts manual IPAM allocation rows only. Kubernetes Service observations remain an independent, current-state enrichment and are never used as allocation history. IPv6 history is outside this MVP and returns `400 Bad Request`; IPv6 subnets are omitted from snapshot runs.
 
+## Address capacity
+
+Inventory and subnet detail use usable-address capacity. IPv4 prefixes from `/0` through `/30` exclude the network and broadcast addresses, `/31` includes both point-to-point addresses, and `/32` includes its single address. The subnet detail list follows the same rule, so an IPv4 `/24` reports and renders 254 usable addresses (`.1` through `.254`). IPv6 capacity includes every address when the count fits in the signed API counter; larger ranges report zero rather than overflowing.
+
 ## Kubernetes Service discovery
 
 Kubernetes discovery is an optional, read-only enrichment process. It lists core `v1/Service` objects, derives `service.namespace.svc.<cluster-domain>` names, and associates ClusterIPs and literal LoadBalancer ingress IPs only with existing IPAM addresses in the configured site. It never creates or deletes IPAM rows and never changes the manually maintained `hostname` field.

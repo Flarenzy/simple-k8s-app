@@ -121,6 +121,23 @@ func TestCreateSubnetRequiresSite(t *testing.T) {
 	}
 }
 
+func TestGetSubnetReportsUsableIPv4Capacity(t *testing.T) {
+	svc := NewNetworkService(
+		stubSubnetRepository{findFn: func(context.Context, int64) (Subnet, error) {
+			return Subnet{ID: 1, CIDR: netip.MustParsePrefix("10.0.0.0/24")}, nil
+		}},
+		stubIPRepository{},
+	)
+
+	subnet, err := svc.GetSubnet(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("get subnet: %v", err)
+	}
+	if subnet.TotalIPCount != 254 {
+		t.Fatalf("expected 254 usable addresses, got %d", subnet.TotalIPCount)
+	}
+}
+
 func TestAssignSubnetSiteValidatesSiteAndSubnet(t *testing.T) {
 	siteID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	svc := NewNetworkService(
