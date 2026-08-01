@@ -38,4 +38,5 @@ type KubernetesDiscoveryRepository interface {
 	RecordFailure(ctx context.Context, source KubernetesSourceConfig, attemptedAt time.Time, message string) error
 	ListSourceStatuses(ctx context.Context) ([]KubernetesSourceStatus, error)
 	ListServicesBySubnetID(ctx context.Context, subnetID int64) (map[IPAddressID][]KubernetesServiceEnrichment, error)
+	ListAllServicesBySubnetID(ctx context.Context, subnetID int64) ([]KubernetesServiceObservation, error)
 }

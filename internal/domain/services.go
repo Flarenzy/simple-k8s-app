@@ -38,4 +38,5 @@ type KubernetesDiscoveryService interface {
 	Reconcile(ctx context.Context, source KubernetesSourceConfig, services []KubernetesServiceSnapshot, observedAt time.Time) (KubernetesReconcileResult, error)
 	RecordFailure(ctx context.Context, source KubernetesSourceConfig, attemptedAt time.Time, err error) error
 	ListSourceStatuses(ctx context.Context) ([]KubernetesSourceStatus, error)
+	ListServicesBySubnetID(ctx context.Context, subnetID int64) ([]KubernetesServiceObservation, error)
 }

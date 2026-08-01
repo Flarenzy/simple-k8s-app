@@ -115,6 +115,36 @@ type KubernetesServiceResponse struct {
 	ObservedAt       time.Time                          `json:"observed_at" example:"2026-08-01T10:00:00Z"`
 }
 
+type KubernetesAddressObservationResponse struct {
+	IP                 string  `json:"ip" example:"10.96.12.4"`
+	Kind               string  `json:"kind" example:"cluster_ip"`
+	IPMode             string  `json:"ip_mode,omitempty" example:"VIP"`
+	MatchStatus        string  `json:"match_status" example:"matched" enums:"matched,unmatched,ambiguous"`
+	MatchCount         int     `json:"match_count" example:"1"`
+	MatchedIPAddressID *string `json:"matched_ip_address_id,omitempty" example:"50e8400-e29b-41d4-a716-446655440000"`
+	MatchedSubnetID    *int64  `json:"matched_subnet_id,omitempty" example:"4"`
+}
+
+type KubernetesHostnameObservationResponse struct {
+	Kind     string `json:"kind" example:"load_balancer"`
+	Hostname string `json:"hostname" example:"orders.example.com"`
+}
+
+type KubernetesServiceObservationResponse struct {
+	Source       KubernetesSourceResponse                `json:"source"`
+	UID          string                                  `json:"uid" example:"02e12c93-1234-5678-90ab-abcdefabcdef"`
+	Name         string                                  `json:"name" example:"orders"`
+	Namespace    string                                  `json:"namespace" example:"commerce"`
+	Type         string                                  `json:"type" example:"LoadBalancer"`
+	ExternalName string                                  `json:"external_name,omitempty" example:"orders.example.com"`
+	DNSName      string                                  `json:"dns_name" example:"orders.commerce.svc.cluster.local"`
+	MatchStatus  string                                  `json:"match_status" example:"matched" enums:"matched,unmatched,ambiguous,no_usable_ip"`
+	Addresses    []KubernetesAddressObservationResponse  `json:"addresses"`
+	Hostnames    []KubernetesHostnameObservationResponse `json:"hostnames"`
+	Ports        []KubernetesServicePortResponse         `json:"ports"`
+	ObservedAt   time.Time                               `json:"observed_at" example:"2026-08-01T10:00:00Z"`
+}
+
 type KubernetesDiscoveryStatusResponse struct {
 	Source        KubernetesSourceResponse `json:"source"`
 	SiteID        uuid.UUID                `json:"site_id"`
@@ -128,6 +158,7 @@ type KubernetesDiscoveryStatusResponse struct {
 	Matched       int                      `json:"matched"`
 	Unmatched     int                      `json:"unmatched"`
 	Ambiguous     int                      `json:"ambiguous"`
+	NoUsableIP    int                      `json:"no_usable_ip"`
 }
 
 // CreateIPRequest is the payload accepted when creating a ip.
@@ -210,6 +241,51 @@ func kubernetesServiceToResponse(service domain.KubernetesServiceEnrichment) Kub
 	return response
 }
 
+func kubernetesServiceObservationsToResponse(services []domain.KubernetesServiceObservation) []KubernetesServiceObservationResponse {
+	responses := make([]KubernetesServiceObservationResponse, 0, len(services))
+	for _, service := range services {
+		response := KubernetesServiceObservationResponse{
+			Source:       KubernetesSourceResponse{Key: service.Source.Key, Name: service.Source.Name},
+			UID:          service.UID,
+			Name:         service.Name,
+			Namespace:    service.Namespace,
+			Type:         service.Type,
+			ExternalName: service.ExternalName,
+			DNSName:      service.DNSName,
+			MatchStatus:  string(service.MatchStatus),
+			Addresses:    make([]KubernetesAddressObservationResponse, 0, len(service.Addresses)),
+			Hostnames:    make([]KubernetesHostnameObservationResponse, 0, len(service.Hostnames)),
+			Ports:        make([]KubernetesServicePortResponse, 0, len(service.Ports)),
+			ObservedAt:   service.ObservedAt,
+		}
+		for _, address := range service.Addresses {
+			var matchedIPAddressID *string
+			if address.MatchedIPAddressID != nil {
+				id := string(*address.MatchedIPAddressID)
+				matchedIPAddressID = &id
+			}
+			response.Addresses = append(response.Addresses, KubernetesAddressObservationResponse{
+				IP: address.IP.String(), Kind: address.Kind, IPMode: address.IPMode,
+				MatchStatus: string(address.MatchStatus), MatchCount: address.MatchCount,
+				MatchedIPAddressID: matchedIPAddressID, MatchedSubnetID: address.MatchedSubnetID,
+			})
+		}
+		for _, hostname := range service.Hostnames {
+			response.Hostnames = append(response.Hostnames, KubernetesHostnameObservationResponse{
+				Kind: hostname.Kind, Hostname: hostname.Hostname,
+			})
+		}
+		for _, port := range service.Ports {
+			response.Ports = append(response.Ports, KubernetesServicePortResponse{
+				Name: port.Name, Protocol: port.Protocol, Port: port.Port, TargetPort: port.TargetPort,
+				AppProtocol: port.AppProtocol, NodePort: port.NodePort,
+			})
+		}
+		responses = append(responses, response)
+	}
+	return responses
+}
+
 func kubernetesStatusesToResponse(statuses []domain.KubernetesSourceStatus) []KubernetesDiscoveryStatusResponse {
 	responses := make([]KubernetesDiscoveryStatusResponse, 0, len(statuses))
 	for _, status := range statuses {
@@ -219,6 +295,7 @@ func kubernetesStatusesToResponse(statuses []domain.KubernetesSourceStatus) []Ku
 			Namespaces: append([]string(nil), status.Namespaces...), State: status.State,
 			LastAttemptAt: status.LastAttemptAt, LastSuccessAt: status.LastSuccessAt, LastError: status.LastError,
 			Services: status.Services, Matched: status.Matched, Unmatched: status.Unmatched, Ambiguous: status.Ambiguous,
+			NoUsableIP: status.NoUsableIP,
 		})
 	}
 	return responses

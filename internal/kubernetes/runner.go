@@ -65,7 +65,7 @@ func (r *Runner) ReconcileOnce(ctx context.Context) error {
 	}
 	r.logger.InfoContext(ctx, "kubernetes service discovery reconciled",
 		"source", r.config.Source.Key, "services", result.Services, "matched", result.Matched,
-		"unmatched", result.Unmatched, "ambiguous", result.Ambiguous,
+		"unmatched", result.Unmatched, "ambiguous", result.Ambiguous, "no_usable_ip", result.NoUsableIP,
 	)
 	return nil
 }

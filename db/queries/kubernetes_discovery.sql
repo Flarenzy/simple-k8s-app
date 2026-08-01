@@ -90,6 +90,7 @@ SET last_attempt_at = $2,
     matched_count = $4,
     unmatched_count = $5,
     ambiguous_count = $6,
+    no_usable_ip_count = $7,
     updated_at = now()
 WHERE id = $1;
 
@@ -101,7 +102,8 @@ WHERE id = $1;
 -- name: ListKubernetesSourceStatuses :many
 SELECT source_key, name, site_id, cluster_domain, namespace_scope,
        last_attempt_at, last_success_at, last_error,
-       service_count, matched_count, unmatched_count, ambiguous_count
+       service_count, matched_count, unmatched_count, ambiguous_count,
+       no_usable_ip_count
 FROM kubernetes_sources
 ORDER BY source_key;
 
@@ -135,3 +137,75 @@ WHERE ip.subnet_id = $1
   AND a.match_status = 'matched'
 ORDER BY a.ip_address_id, src.source_key, svc.namespace, svc.name, svc.kubernetes_uid,
          a.kind, port.port, port.protocol, port.name;
+
+-- name: ListActiveKubernetesServicesBySubnet :many
+SELECT svc.id AS service_id,
+       src.source_key,
+       src.name AS source_name,
+       svc.kubernetes_uid,
+       svc.name,
+       svc.namespace,
+       svc.service_type,
+       svc.external_name,
+       svc.dns_name,
+       svc.observed_at
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id
+WHERE subnet.id = $1
+  AND svc.active = true
+ORDER BY src.source_key, svc.namespace, svc.name, svc.kubernetes_uid;
+
+-- name: ListKubernetesServiceAddressesBySubnet :many
+SELECT a.service_id,
+       a.address,
+       a.kind,
+       COALESCE(a.ip_mode, '') AS ip_mode,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NULL THEN 'unmatched'
+           ELSE a.match_status
+       END::text AS match_status,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NULL THEN 0
+           ELSE a.match_count
+       END::integer AS match_count,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NOT NULL THEN a.ip_address_id
+           ELSE NULL
+       END::uuid AS ip_address_id,
+       matched_subnet.id AS matched_subnet_id
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_addresses a ON a.service_id = svc.id
+LEFT JOIN ip_addresses matched_ip ON matched_ip.id = a.ip_address_id
+LEFT JOIN subnets matched_subnet ON matched_subnet.id = matched_ip.subnet_id
+                                AND matched_subnet.site_id = src.site_id
+WHERE subnet.id = $1
+ORDER BY svc.id, a.kind, a.address;
+
+-- name: ListKubernetesServicePortsBySubnet :many
+SELECT port.service_id,
+       COALESCE(port.name, '') AS name,
+       port.protocol,
+       port.port,
+       port.target_port,
+       COALESCE(port.app_protocol, '') AS app_protocol,
+       port.node_port
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_ports port ON port.service_id = svc.id
+WHERE subnet.id = $1
+ORDER BY svc.id, port.port, port.protocol, port.name;
+
+-- name: ListKubernetesServiceHostnamesBySubnet :many
+SELECT hostname.service_id,
+       hostname.kind,
+       hostname.hostname
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_hostnames hostname ON hostname.service_id = svc.id
+WHERE subnet.id = $1
+ORDER BY svc.id, hostname.kind, hostname.hostname;

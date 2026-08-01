@@ -39,6 +39,10 @@ func (s *stubDiscoveryService) ListSourceStatuses(context.Context) ([]domain.Kub
 	return nil, nil
 }
 
+func (s *stubDiscoveryService) ListServicesBySubnetID(context.Context, int64) ([]domain.KubernetesServiceObservation, error) {
+	return nil, nil
+}
+
 func TestRunnerDoesNotPublishPartialList(t *testing.T) {
 	service := &stubDiscoveryService{}
 	runner := NewRunner(validTestConfig("one", "two"), stubLister{err: errors.New("namespace two failed")}, service, slog.New(slog.NewTextHandler(io.Discard, nil)))

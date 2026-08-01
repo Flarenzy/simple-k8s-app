@@ -116,6 +116,41 @@ type kubernetesStatusResponse struct {
 	} `json:"source"`
 	State         string     `json:"state"`
 	LastSuccessAt *time.Time `json:"last_success_at"`
+	NoUsableIP    int        `json:"no_usable_ip"`
+}
+
+type kubernetesServiceObservationResponse struct {
+	Source struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	} `json:"source"`
+	UID          string `json:"uid"`
+	Name         string `json:"name"`
+	Namespace    string `json:"namespace"`
+	Type         string `json:"type"`
+	ExternalName string `json:"external_name"`
+	DNSName      string `json:"dns_name"`
+	MatchStatus  string `json:"match_status"`
+	Addresses    []struct {
+		IP                 string `json:"ip"`
+		Kind               string `json:"kind"`
+		IPMode             string `json:"ip_mode"`
+		MatchStatus        string `json:"match_status"`
+		MatchCount         int    `json:"match_count"`
+		MatchedIPAddressID string `json:"matched_ip_address_id"`
+		MatchedSubnetID    int64  `json:"matched_subnet_id"`
+	} `json:"addresses"`
+	Hostnames []struct {
+		Kind     string `json:"kind"`
+		Hostname string `json:"hostname"`
+	} `json:"hostnames"`
+	Ports []struct {
+		Name       string `json:"name"`
+		Protocol   string `json:"protocol"`
+		Port       int32  `json:"port"`
+		TargetPort string `json:"target_port"`
+	} `json:"ports"`
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 type importResponse struct {
@@ -318,16 +353,24 @@ func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
 	source := domain.KubernetesSourceConfig{Key: "integration-cluster", Name: "Integration cluster", SiteID: siteID, ClusterDomain: "cluster.test", Namespaces: []string{"commerce"}}
 	source.StaleRetention = 7 * 24 * time.Hour
 	observedAt := time.Now().UTC().Truncate(time.Microsecond)
-	result, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{{
-		UID: "service-uid-1", Namespace: "commerce", Name: "orders", Type: "LoadBalancer", ResourceVersion: "1",
-		DNSName:   "orders.commerce.svc.cluster.test",
-		Addresses: []domain.KubernetesServiceAddress{{Kind: "cluster_ip", Address: netip.MustParseAddr("10.88.0.10")}, {Kind: "load_balancer", Address: netip.MustParseAddr("192.0.2.88")}},
-		Ports:     []domain.KubernetesServicePort{{Name: "https", Protocol: "TCP", Port: 443, TargetPort: "8443"}},
-	}}, observedAt)
+	result, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{
+		{
+			UID: "service-uid-1", Namespace: "commerce", Name: "orders", Type: "LoadBalancer", ResourceVersion: "1",
+			DNSName:   "orders.commerce.svc.cluster.test",
+			Addresses: []domain.KubernetesServiceAddress{{Kind: "cluster_ip", Address: netip.MustParseAddr("10.88.0.10")}, {Kind: "load_balancer", Address: netip.MustParseAddr("192.0.2.88"), IPMode: "VIP"}},
+			Hostnames: []domain.KubernetesServiceHostname{{Kind: "load_balancer", Hostname: "orders.example.test"}},
+			Ports:     []domain.KubernetesServicePort{{Name: "https", Protocol: "TCP", Port: 443, TargetPort: "8443"}},
+		},
+		{
+			UID: "service-uid-unmatched", Namespace: "commerce", Name: "payments", Type: "ClusterIP", ResourceVersion: "1",
+			DNSName:   "payments.commerce.svc.cluster.test",
+			Addresses: []domain.KubernetesServiceAddress{{Kind: "cluster_ip", Address: netip.MustParseAddr("192.0.2.99")}},
+		},
+	}, observedAt)
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	if result.Matched != 1 || result.Unmatched != 1 || result.Ambiguous != 0 {
+	if result.Matched != 1 || result.Unmatched != 2 || result.Ambiguous != 0 || result.NoUsableIP != 0 {
 		t.Fatalf("unexpected match result: %+v", result)
 	}
 
@@ -343,6 +386,27 @@ func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
 	service := ips[0].KubernetesServices[0]
 	if service.Source.Key != source.Key || service.UID != "service-uid-1" || service.DNSName != "orders.commerce.svc.cluster.test" || len(service.MatchedAddresses) != 1 || len(service.Ports) != 1 {
 		t.Fatalf("unexpected service enrichment: %+v", service)
+	}
+
+	servicesResp, err := s.get(t, fmt.Sprintf("/api/v1/subnets/%d/kubernetes-services", subnet.ID), token)
+	if err != nil || servicesResp.StatusCode != http.StatusOK {
+		t.Fatalf("list discovered services: status=%v err=%v", servicesResp.StatusCode, err)
+	}
+	var discoveredServices []kubernetesServiceObservationResponse
+	s.decodeJSON(t, servicesResp, &discoveredServices)
+	if len(discoveredServices) != 2 {
+		t.Fatalf("expected matched and unmatched services, got %+v", discoveredServices)
+	}
+	matchedService := discoveredServices[0]
+	unmatchedService := discoveredServices[1]
+	if matchedService.Source.Key != source.Key || matchedService.UID != "service-uid-1" || matchedService.Namespace != "commerce" || matchedService.Name != "orders" || matchedService.Type != "LoadBalancer" || matchedService.MatchStatus != "matched" || len(matchedService.Addresses) != 2 || len(matchedService.Hostnames) != 1 || len(matchedService.Ports) != 1 || !matchedService.ObservedAt.Equal(observedAt) {
+		t.Fatalf("matched Service contract incomplete: %+v", matchedService)
+	}
+	if matchedService.Addresses[0].MatchStatus != "matched" || matchedService.Addresses[0].MatchedIPAddressID == "" || matchedService.Addresses[0].MatchedSubnetID != subnet.ID || matchedService.Addresses[1].MatchStatus != "unmatched" || matchedService.Addresses[1].IPMode != "VIP" {
+		t.Fatalf("address observations or links are inaccurate: %+v", matchedService.Addresses)
+	}
+	if unmatchedService.UID != "service-uid-unmatched" || unmatchedService.MatchStatus != "unmatched" || len(unmatchedService.Addresses) != 1 || unmatchedService.Addresses[0].MatchedIPAddressID != "" {
+		t.Fatalf("unmatched Service was filtered or linked: %+v", unmatchedService)
 	}
 
 	if err := repository.RecordFailure(context.Background(), source, observedAt.Add(time.Minute), "forbidden"); err != nil {
@@ -435,6 +499,15 @@ func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
 	if len(ips[0].KubernetesServices) != 0 || ips[0].Hostname != "manual-orders-name" {
 		t.Fatalf("ambiguous observation linked or rewrote manual data: %+v", ips[0])
 	}
+	servicesResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/kubernetes-services", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list ambiguous services: %v", err)
+	}
+	discoveredServices = nil
+	s.decodeJSON(t, servicesResp, &discoveredServices)
+	if len(discoveredServices) != 1 || discoveredServices[0].MatchStatus != "ambiguous" || len(discoveredServices[0].Addresses) != 1 || discoveredServices[0].Addresses[0].MatchCount != 2 || discoveredServices[0].Addresses[0].MatchedIPAddressID != "" {
+		t.Fatalf("ambiguous Service contract is inaccurate: %+v", discoveredServices)
+	}
 
 	if _, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{}, observedAt.Add(3*time.Minute)); err != nil {
 		t.Fatalf("reconcile complete empty snapshot: %v", err)
@@ -461,6 +534,25 @@ func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
 	}
 	if oldActive || !newActive {
 		t.Fatalf("UID identity did not distinguish recreation: old=%t new=%t", oldActive, newActive)
+	}
+	servicesResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/kubernetes-services", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list no-usable-IP services: %v", err)
+	}
+	discoveredServices = nil
+	s.decodeJSON(t, servicesResp, &discoveredServices)
+	if len(discoveredServices) != 1 || discoveredServices[0].UID != "service-uid-2" || discoveredServices[0].ExternalName != "orders.example.test" || discoveredServices[0].MatchStatus != "no_usable_ip" || discoveredServices[0].Addresses == nil || len(discoveredServices[0].Addresses) != 0 {
+		t.Fatalf("no-usable-IP Service contract is inaccurate: %+v", discoveredServices)
+	}
+	statusResp, err = s.get(t, "/api/v1/kubernetes/sources", token)
+	if err != nil {
+		t.Fatalf("status after no-usable-IP reconcile: %v", err)
+	}
+	s.decodeJSON(t, statusResp, &statuses)
+	for _, status := range statuses {
+		if status.Source.Key == source.Key && status.NoUsableIP != 1 {
+			t.Fatalf("expected no_usable_ip source count, got %+v", status)
+		}
 	}
 }
 

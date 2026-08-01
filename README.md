@@ -263,7 +263,13 @@ helm upgrade --install ipam deploy/helm/ipam -n ipam \
   --set 'api.kubernetesDiscovery.namespaces[0]=default'
 ```
 
-Every IP response contains a non-null `kubernetes_services` array. `GET /api/v1/kubernetes/sources` is protected by the same bearer-token boundary as the other application routes and reports `pending`, `healthy`, or `degraded` source state. A Service is linked only when its address has exactly one match inside the bound site; zero matches remain unmatched and overlapping matches remain ambiguous. Headless and ExternalName Services, pending LoadBalancers, and hostname-only LoadBalancer ingress are retained without invented IP associations.
+Every IP response contains a non-null `kubernetes_services` array containing the Services exactly linked to that manual IP row. `GET /api/v1/subnets/{id}/kubernetes-services` returns all active Services from discovery sources bound to the subnet's site, including observations that have no IPAM link. Both endpoints and `GET /api/v1/kubernetes/sources` are protected by the same bearer-token boundary as the other application routes.
+
+The subnet Service response is additive to the existing IP list contract. Each element contains the stable source key and Kubernetes UID, source display name, namespace, name, type, optional ExternalName, derived DNS name, declared ports, observation time, hostname observations, an overall `match_status`, and a non-null `addresses` array. Each address reports its kind, optional `ip_mode`, match status and candidate count. A `matched` address also reports `matched_ip_address_id` and `matched_subnet_id`; those fields are absent for every other outcome.
+
+Service-level `match_status` is `matched` when any address has an exact link, otherwise `ambiguous` when any address has multiple candidates, otherwise `unmatched` when literal addresses exist, and `no_usable_ip` when none exist. Per-address states remain visible for mixed outcomes, such as a matched ClusterIP and unmatched LoadBalancer IP. Headless, ExternalName, pending addressless, and hostname-only Services therefore remain visible without invented rows. The source status response continues to report `pending`, `healthy`, or `degraded` and includes a `no_usable_ip` Service count alongside its existing counts.
+
+A Service address is linked only when it has exactly one match inside the bound site; zero matches remain unmatched and overlapping matches remain ambiguous. Discovery never resolves hostname observations into IP addresses, and it does not rewrite manual hostnames.
 
 A failed namespace list, timeout, RBAC denial, malformed observed address, or persistence failure never publishes a partial snapshot. The last successful Service associations remain available, `/readyz` continues to check PostgreSQL only, and the source status becomes degraded. A later complete empty snapshot is authoritative and marks the previous Services inactive.
 

@@ -851,6 +851,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/subnets/{id}/kubernetes-services": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kubernetes"
+                ],
+                "summary": "List discovered Kubernetes Services for a subnet site",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/http.KubernetesServiceObservationResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/subnets/{id}/site": {
             "patch": {
                 "security": [
@@ -1062,6 +1116,44 @@ const docTemplate = `{
                 }
             }
         },
+        "http.KubernetesAddressObservationResponse": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string",
+                    "example": "10.96.12.4"
+                },
+                "ip_mode": {
+                    "type": "string",
+                    "example": "VIP"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "cluster_ip"
+                },
+                "match_count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "match_status": {
+                    "type": "string",
+                    "enum": [
+                        "matched",
+                        "unmatched",
+                        "ambiguous"
+                    ],
+                    "example": "matched"
+                },
+                "matched_ip_address_id": {
+                    "type": "string",
+                    "example": "50e8400-e29b-41d4-a716-446655440000"
+                },
+                "matched_subnet_id": {
+                    "type": "integer",
+                    "example": 4
+                }
+            }
+        },
         "http.KubernetesDiscoveryStatusResponse": {
             "type": "object",
             "properties": {
@@ -1089,6 +1181,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "no_usable_ip": {
+                    "type": "integer"
+                },
                 "services": {
                     "type": "integer"
                 },
@@ -1107,6 +1202,19 @@ const docTemplate = `{
                 }
             }
         },
+        "http.KubernetesHostnameObservationResponse": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "example": "orders.example.com"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "load_balancer"
+                }
+            }
+        },
         "http.KubernetesMatchedAddressResponse": {
             "type": "object",
             "properties": {
@@ -1117,6 +1225,70 @@ const docTemplate = `{
                 "kind": {
                     "type": "string",
                     "example": "cluster_ip"
+                }
+            }
+        },
+        "http.KubernetesServiceObservationResponse": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesAddressObservationResponse"
+                    }
+                },
+                "dns_name": {
+                    "type": "string",
+                    "example": "orders.commerce.svc.cluster.local"
+                },
+                "external_name": {
+                    "type": "string",
+                    "example": "orders.example.com"
+                },
+                "hostnames": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesHostnameObservationResponse"
+                    }
+                },
+                "match_status": {
+                    "type": "string",
+                    "enum": [
+                        "matched",
+                        "unmatched",
+                        "ambiguous",
+                        "no_usable_ip"
+                    ],
+                    "example": "matched"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "orders"
+                },
+                "namespace": {
+                    "type": "string",
+                    "example": "commerce"
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesServicePortResponse"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/http.KubernetesSourceResponse"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "LoadBalancer"
+                },
+                "uid": {
+                    "type": "string",
+                    "example": "02e12c93-1234-5678-90ab-abcdefabcdef"
                 }
             }
         },

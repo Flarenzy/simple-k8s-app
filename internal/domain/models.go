@@ -61,6 +61,40 @@ type KubernetesServiceEnrichment struct {
 	ObservedAt       time.Time
 }
 
+type KubernetesMatchStatus string
+
+const (
+	KubernetesMatchMatched    KubernetesMatchStatus = "matched"
+	KubernetesMatchUnmatched  KubernetesMatchStatus = "unmatched"
+	KubernetesMatchAmbiguous  KubernetesMatchStatus = "ambiguous"
+	KubernetesMatchNoUsableIP KubernetesMatchStatus = "no_usable_ip"
+)
+
+type KubernetesAddressObservation struct {
+	IP                 netip.Addr
+	Kind               string
+	IPMode             string
+	MatchStatus        KubernetesMatchStatus
+	MatchCount         int
+	MatchedIPAddressID *IPAddressID
+	MatchedSubnetID    *int64
+}
+
+type KubernetesServiceObservation struct {
+	Source       KubernetesSource
+	UID          string
+	Name         string
+	Namespace    string
+	Type         string
+	ExternalName string
+	DNSName      string
+	MatchStatus  KubernetesMatchStatus
+	Addresses    []KubernetesAddressObservation
+	Hostnames    []KubernetesServiceHostname
+	Ports        []KubernetesServicePort
+	ObservedAt   time.Time
+}
+
 type KubernetesServiceAddress struct {
 	Kind    string
 	Address netip.Addr
@@ -95,10 +129,11 @@ type KubernetesSourceConfig struct {
 }
 
 type KubernetesReconcileResult struct {
-	Services  int
-	Matched   int
-	Unmatched int
-	Ambiguous int
+	Services   int
+	Matched    int
+	Unmatched  int
+	Ambiguous  int
+	NoUsableIP int
 }
 
 type KubernetesSourceStatus struct {
@@ -114,6 +149,7 @@ type KubernetesSourceStatus struct {
 	Matched       int
 	Unmatched     int
 	Ambiguous     int
+	NoUsableIP    int
 }
 
 type Site struct {

@@ -74,6 +74,34 @@ definitions:
       updated:
         type: integer
     type: object
+  http.KubernetesAddressObservationResponse:
+    properties:
+      ip:
+        example: 10.96.12.4
+        type: string
+      ip_mode:
+        example: VIP
+        type: string
+      kind:
+        example: cluster_ip
+        type: string
+      match_count:
+        example: 1
+        type: integer
+      match_status:
+        enum:
+        - matched
+        - unmatched
+        - ambiguous
+        example: matched
+        type: string
+      matched_ip_address_id:
+        example: 50e8400-e29b-41d4-a716-446655440000
+        type: string
+      matched_subnet_id:
+        example: 4
+        type: integer
+    type: object
   http.KubernetesDiscoveryStatusResponse:
     properties:
       ambiguous:
@@ -92,6 +120,8 @@ definitions:
         items:
           type: string
         type: array
+      no_usable_ip:
+        type: integer
       services:
         type: integer
       site_id:
@@ -104,6 +134,15 @@ definitions:
       unmatched:
         type: integer
     type: object
+  http.KubernetesHostnameObservationResponse:
+    properties:
+      hostname:
+        example: orders.example.com
+        type: string
+      kind:
+        example: load_balancer
+        type: string
+    type: object
   http.KubernetesMatchedAddressResponse:
     properties:
       ip:
@@ -111,6 +150,52 @@ definitions:
         type: string
       kind:
         example: cluster_ip
+        type: string
+    type: object
+  http.KubernetesServiceObservationResponse:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/http.KubernetesAddressObservationResponse'
+        type: array
+      dns_name:
+        example: orders.commerce.svc.cluster.local
+        type: string
+      external_name:
+        example: orders.example.com
+        type: string
+      hostnames:
+        items:
+          $ref: '#/definitions/http.KubernetesHostnameObservationResponse'
+        type: array
+      match_status:
+        enum:
+        - matched
+        - unmatched
+        - ambiguous
+        - no_usable_ip
+        example: matched
+        type: string
+      name:
+        example: orders
+        type: string
+      namespace:
+        example: commerce
+        type: string
+      observed_at:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      ports:
+        items:
+          $ref: '#/definitions/http.KubernetesServicePortResponse'
+        type: array
+      source:
+        $ref: '#/definitions/http.KubernetesSourceResponse'
+      type:
+        example: LoadBalancer
+        type: string
+      uid:
+        example: 02e12c93-1234-5678-90ab-abcdefabcdef
         type: string
     type: object
   http.KubernetesServicePortResponse:
@@ -805,6 +890,40 @@ paths:
       summary: Update ip under subnet
       tags:
       - subnets
+  /api/v1/subnets/{id}/kubernetes-services:
+    get:
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.KubernetesServiceObservationResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List discovered Kubernetes Services for a subnet site
+      tags:
+      - kubernetes
   /api/v1/subnets/{id}/site:
     patch:
       consumes:
