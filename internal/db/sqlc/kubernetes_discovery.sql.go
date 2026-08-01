@@ -292,8 +292,10 @@ FROM kubernetes_service_addresses a
 JOIN kubernetes_services svc ON svc.id = a.service_id
 JOIN kubernetes_sources src ON src.id = svc.source_id
 JOIN ip_addresses ip ON ip.id = a.ip_address_id
+JOIN subnets subnet ON subnet.id = ip.subnet_id
 LEFT JOIN kubernetes_service_ports port ON port.service_id = svc.id
 WHERE ip.subnet_id = $1
+  AND subnet.site_id = src.site_id
   AND svc.active = true
   AND a.match_status = 'matched'
 ORDER BY a.ip_address_id, src.source_key, svc.namespace, svc.name, svc.kubernetes_uid,

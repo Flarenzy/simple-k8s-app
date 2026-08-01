@@ -373,6 +373,39 @@ func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
 		t.Fatalf("unexpected degraded status: %+v", sourceStatus)
 	}
 
+	otherSiteResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", token, map[string]any{"name": "Other Kubernetes discovery site"})
+	if err != nil || otherSiteResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create reassignment site: status=%v err=%v", otherSiteResp.StatusCode, err)
+	}
+	var otherSite siteResponse
+	s.decodeJSON(t, otherSiteResp, &otherSite)
+	reassignResp, err := s.jsonRequest(t, http.MethodPatch, fmt.Sprintf("/api/v1/subnets/%d/site", subnet.ID), token, map[string]any{"site_id": otherSite.ID})
+	if err != nil || reassignResp.StatusCode != http.StatusOK {
+		t.Fatalf("reassign subnet site: status=%v err=%v", reassignResp.StatusCode, err)
+	}
+	s.closeBody(t, reassignResp)
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list after subnet reassignment: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 0 {
+		t.Fatalf("stale enrichment crossed site scope: %+v", ips[0])
+	}
+	reassignResp, err = s.jsonRequest(t, http.MethodPatch, fmt.Sprintf("/api/v1/subnets/%d/site", subnet.ID), token, map[string]any{"site_id": site.ID})
+	if err != nil || reassignResp.StatusCode != http.StatusOK {
+		t.Fatalf("restore subnet site: status=%v err=%v", reassignResp.StatusCode, err)
+	}
+	s.closeBody(t, reassignResp)
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list after subnet site restoration: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 1 {
+		t.Fatalf("matched enrichment was not retained for rematching: %+v", ips[0])
+	}
+
 	overlapResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/subnets", token, map[string]any{
 		"cidr": "10.88.0.0/25", "site_id": site.ID, "description": "overlap",
 	})
