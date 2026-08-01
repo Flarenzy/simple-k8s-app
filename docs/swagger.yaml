@@ -259,6 +259,37 @@ definitions:
         example: Production
         type: string
     type: object
+  http.ReportingSettingsRequest:
+    properties:
+      cadence:
+        enum:
+        - hourly
+        - daily
+        - weekly
+        example: hourly
+        type: string
+      retention_days:
+        example: 30
+        maximum: 180
+        minimum: 1
+        type: integer
+    type: object
+  http.ReportingSettingsResponse:
+    properties:
+      cadence:
+        enum:
+        - hourly
+        - daily
+        - weekly
+        example: hourly
+        type: string
+      last_snapshot_at:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      retention_days:
+        example: 30
+        type: integer
+    type: object
   http.RowError:
     properties:
       message:
@@ -350,6 +381,40 @@ definitions:
       used_ips:
         type: integer
     type: object
+  http.SubnetUsageHistoryResponse:
+    properties:
+      cadence:
+        example: hourly
+        type: string
+      from:
+        example: "2026-07-25T10:00:00Z"
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/http.SubnetUsageSnapshotResponse'
+        type: array
+      range:
+        example: 7d
+        type: string
+      subnet_id:
+        example: 4
+        type: integer
+      to:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+    type: object
+  http.SubnetUsageSnapshotResponse:
+    properties:
+      captured_at:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      total_ips:
+        example: 256
+        type: integer
+      used_ips:
+        example: 42
+        type: integer
+    type: object
   http.UpdateIPRequest:
     properties:
       hostname:
@@ -420,6 +485,54 @@ paths:
       summary: List Kubernetes discovery source status
       tags:
       - kubernetes
+  /api/v1/reporting/settings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.ReportingSettingsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get subnet usage reporting settings
+      tags:
+      - reporting
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reporting settings
+        in: body
+        name: settings
+        required: true
+        schema:
+          $ref: '#/definitions/http.ReportingSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.ReportingSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update subnet usage reporting settings
+      tags:
+      - reporting
   /api/v1/sites:
     get:
       produces:
@@ -964,6 +1077,49 @@ paths:
       summary: Assign subnet to site
       tags:
       - subnets
+  /api/v1/subnets/{id}/usage-history:
+    get:
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 7d
+        description: Bounded history range
+        enum:
+        - 24h
+        - 7d
+        - 30d
+        - 90d
+        - 180d
+        in: query
+        name: range
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SubnetUsageHistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get periodic subnet usage snapshots
+      tags:
+      - reporting
   /healthz:
     get:
       responses:

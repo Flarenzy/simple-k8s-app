@@ -20,6 +20,41 @@ type Subnet struct {
 	UpdatedAt    time.Time
 }
 
+type ReportingCadence string
+
+const (
+	ReportingCadenceHourly ReportingCadence = "hourly"
+	ReportingCadenceDaily  ReportingCadence = "daily"
+	ReportingCadenceWeekly ReportingCadence = "weekly"
+)
+
+type ReportingSettings struct {
+	Cadence        ReportingCadence
+	RetentionDays  int32
+	LastSnapshotAt *time.Time
+}
+
+type SubnetUsageSnapshot struct {
+	SubnetID   int64
+	CapturedAt time.Time
+	UsedIPs    int64
+	TotalIPs   int64
+}
+
+type SubnetUsageHistory struct {
+	SubnetID int64
+	Range    string
+	From     time.Time
+	To       time.Time
+	Cadence  ReportingCadence
+	Points   []SubnetUsageSnapshot
+}
+
+type SnapshotCycleResult struct {
+	Captured int64
+	Deleted  int64
+}
+
 type IPAddress struct {
 	ID                 IPAddressID
 	IP                 netip.Addr

@@ -3,11 +3,12 @@ package domain
 import "errors"
 
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrSubnetNotFound = errors.New("subnet not found")
-	ErrIPNotFound     = errors.New("ip not found")
-	ErrInvalidInput   = errors.New("invalid input")
-	ErrConflict       = errors.New("conflict")
-	ErrUnauthorized   = errors.New("unauthorized")
-	ErrDiscoveryBusy  = errors.New("kubernetes discovery reconciliation already running")
+	ErrNotFound        = errors.New("not found")
+	ErrSubnetNotFound  = errors.New("subnet not found")
+	ErrIPNotFound      = errors.New("ip not found")
+	ErrInvalidInput    = errors.New("invalid input")
+	ErrConflict        = errors.New("conflict")
+	ErrUnauthorized    = errors.New("unauthorized")
+	ErrDiscoveryBusy   = errors.New("kubernetes discovery reconciliation already running")
+	ErrIPv6Unsupported = errors.New("IPv6 subnet usage reporting is not supported")
 )

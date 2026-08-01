@@ -21,6 +21,7 @@ type API struct {
 	SitesService       domain.SitesService
 	ImportService      domain.ImportService
 	DiscoveryService   domain.KubernetesDiscoveryService
+	ReportingService   domain.ReportingService
 	Authenticator      apiauth.Authenticator
 	CORSAllowedOrigins []string
 }
@@ -75,6 +76,9 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
 	mux.HandleFunc("GET /api/v1/subnets/{id}/kubernetes-services", a.handleGetKubernetesServicesBySubnetID)
 	mux.HandleFunc("GET /api/v1/kubernetes/sources", a.handleGetKubernetesSources)
+	mux.HandleFunc("GET /api/v1/reporting/settings", a.handleGetReportingSettings)
+	mux.HandleFunc("PATCH /api/v1/reporting/settings", a.handleUpdateReportingSettings)
+	mux.HandleFunc("GET /api/v1/subnets/{id}/usage-history", a.handleGetSubnetUsageHistory)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}/ips/{uuid}", a.handleDeleteIPByUUIDandSubnetID)
 

@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+type UpdateReportingSettingsInput struct {
+	Cadence       ReportingCadence
+	RetentionDays int32
+}
+
 type CreateSubnetInput struct {
 	CIDR        string
 	SiteID      *uuid.UUID

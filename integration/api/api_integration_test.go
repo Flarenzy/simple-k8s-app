@@ -170,6 +170,23 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type reportingSettingsResponse struct {
+	Cadence        string     `json:"cadence"`
+	RetentionDays  int32      `json:"retention_days"`
+	LastSnapshotAt *time.Time `json:"last_snapshot_at"`
+}
+
+type usageHistoryResponse struct {
+	SubnetID int64  `json:"subnet_id"`
+	Range    string `json:"range"`
+	Cadence  string `json:"cadence"`
+	Points   []struct {
+		CapturedAt time.Time `json:"captured_at"`
+		UsedIPs    int64     `json:"used_ips"`
+		TotalIPs   int64     `json:"total_ips"`
+	} `json:"points"`
+}
+
 type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
@@ -359,6 +376,85 @@ func TestApplicationRoleAuthorization(t *testing.T) {
 		t.Fatalf("admin delete: status=%v err=%v", resp.StatusCode, err)
 	}
 	s.closeBody(t, resp)
+}
+
+func TestSubnetUsageReportingSettingsAndHistory(t *testing.T) {
+	s := mustSuite(t)
+	adminToken := s.mustToken(t)
+	editorToken := s.mustTokenFor(t, editorUsername)
+	readerToken := s.mustTokenFor(t, readerUsername)
+	t.Cleanup(func() {
+		response, cleanupErr := s.jsonRequest(t, http.MethodPatch, "/api/v1/reporting/settings", adminToken, map[string]any{"cadence": "hourly", "retention_days": 30})
+		if cleanupErr != nil {
+			t.Errorf("restore reporting settings: %v", cleanupErr)
+			return
+		}
+		s.closeBody(t, response)
+	})
+
+	settingsResp, err := s.get(t, "/api/v1/reporting/settings", readerToken)
+	if err != nil || settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("read reporting settings: status=%v err=%v", settingsResp.StatusCode, err)
+	}
+	s.closeBody(t, settingsResp)
+
+	forbiddenResp, err := s.jsonRequest(t, http.MethodPatch, "/api/v1/reporting/settings", readerToken, map[string]any{"cadence": "daily", "retention_days": 45})
+	if err != nil || forbiddenResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("read-only settings update: status=%v err=%v", forbiddenResp.StatusCode, err)
+	}
+	s.closeBody(t, forbiddenResp)
+
+	updateResp, err := s.jsonRequest(t, http.MethodPatch, "/api/v1/reporting/settings", editorToken, map[string]any{"cadence": "daily", "retention_days": 45})
+	if err != nil || updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("editor settings update: status=%v err=%v", updateResp.StatusCode, err)
+	}
+	var settings reportingSettingsResponse
+	s.decodeJSON(t, updateResp, &settings)
+	if settings.Cadence != "daily" || settings.RetentionDays != 45 {
+		t.Fatalf("unexpected updated settings: %+v", settings)
+	}
+
+	invalidResp, err := s.jsonRequest(t, http.MethodPatch, "/api/v1/reporting/settings", editorToken, map[string]any{"cadence": "hourly", "retention_days": 181})
+	if err != nil || invalidResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid retention: status=%v err=%v", invalidResp.StatusCode, err)
+	}
+	s.closeBody(t, invalidResp)
+
+	siteResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", adminToken, map[string]any{"name": "Reporting site"})
+	if err != nil || siteResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create reporting site: status=%v err=%v", siteResp.StatusCode, err)
+	}
+	var site siteResponse
+	s.decodeJSON(t, siteResp, &site)
+	subnetResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/subnets", adminToken, map[string]any{"cidr": "10.123.45.0/24", "site_id": site.ID, "description": "Reporting test"})
+	if err != nil || subnetResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create reporting subnet: status=%v err=%v", subnetResp.StatusCode, err)
+	}
+	var subnet subnetResponse
+	s.decodeJSON(t, subnetResp, &subnet)
+
+	connection, err := pgx.Connect(context.Background(), s.dsn)
+	if err != nil {
+		t.Fatalf("connect for reporting fixtures: %v", err)
+	}
+	defer connection.Close(context.Background())
+	fixtureTime := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	for index, used := range []int64{3, 5} {
+		if _, err = connection.Exec(context.Background(), `INSERT INTO subnet_usage_snapshots (subnet_id, captured_at, used_ips, total_ips) VALUES ($1, $2, $3, 256)`, subnet.ID, fixtureTime.Add(time.Duration(index)*time.Hour), used); err != nil {
+			t.Fatalf("insert usage snapshot: %v", err)
+		}
+	}
+
+	historyResp, err := s.get(t, fmt.Sprintf("/api/v1/subnets/%d/usage-history?range=24h", subnet.ID), readerToken)
+	if err != nil || historyResp.StatusCode != http.StatusOK {
+		t.Fatalf("read usage history: status=%v err=%v", historyResp.StatusCode, err)
+	}
+	var history usageHistoryResponse
+	s.decodeJSON(t, historyResp, &history)
+	if history.SubnetID != subnet.ID || history.Range != "24h" || history.Cadence != "daily" || len(history.Points) != 2 || history.Points[0].UsedIPs != 3 || history.Points[1].UsedIPs != 5 {
+		t.Fatalf("unexpected usage history: %+v", history)
+	}
+
 }
 
 func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {

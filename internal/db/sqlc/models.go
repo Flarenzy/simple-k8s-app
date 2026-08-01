@@ -84,6 +84,13 @@ type KubernetesSource struct {
 	NoUsableIpCount int32              `json:"no_usable_ip_count"`
 }
 
+type ReportingSetting struct {
+	Singleton      bool               `json:"singleton"`
+	Cadence        string             `json:"cadence"`
+	RetentionDays  int32              `json:"retention_days"`
+	LastSnapshotAt pgtype.Timestamptz `json:"last_snapshot_at"`
+}
+
 type Site struct {
 	ID          pgtype.UUID        `json:"id"`
 	Name        string             `json:"name"`
@@ -99,4 +106,11 @@ type Subnet struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	SiteID      pgtype.UUID        `json:"site_id"`
+}
+
+type SubnetUsageSnapshot struct {
+	SubnetID   int64              `json:"subnet_id"`
+	CapturedAt pgtype.Timestamptz `json:"captured_at"`
+	UsedIps    int64              `json:"used_ips"`
+	TotalIps   int64              `json:"total_ips"`
 }

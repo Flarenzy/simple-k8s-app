@@ -40,3 +40,10 @@ type KubernetesDiscoveryService interface {
 	ListSourceStatuses(ctx context.Context) ([]KubernetesSourceStatus, error)
 	ListServicesBySubnetID(ctx context.Context, subnetID int64) ([]KubernetesServiceObservation, error)
 }
+
+type ReportingService interface {
+	GetSettings(ctx context.Context) (ReportingSettings, error)
+	UpdateSettings(ctx context.Context, input UpdateReportingSettingsInput) (ReportingSettings, error)
+	GetSubnetUsageHistory(ctx context.Context, subnetID int64, usageRange string) (SubnetUsageHistory, error)
+	RunSnapshotCycle(ctx context.Context) (SnapshotCycleResult, error)
+}
