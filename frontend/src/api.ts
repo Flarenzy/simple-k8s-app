@@ -22,11 +22,15 @@ async function json<T>(requester: Requester, path: string, init?: RequestInit): 
 	return response.json() as Promise<T>;
 }
 
+function mapIPAddress(record: IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }): IPAddress {
+	return { ...record, kubernetes_services: Array.isArray(record.kubernetes_services) ? record.kubernetes_services : [] };
+}
+
 export const api = {
 	subnets: (requester: Requester) => json<Subnet[]>(requester, "/subnets"),
 	sites: (requester: Requester) => json<Site[]>(requester, "/sites"),
 	siteStatistics: (requester: Requester) => json<SiteStatistics[]>(requester, "/sites/statistics"),
-	ips: (requester: Requester, subnetId: number) => json<IPAddress[]>(requester, `/subnets/${subnetId}/ips`),
+	ips: async (requester: Requester, subnetId: number) => (await json<Array<IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }>>(requester, `/subnets/${subnetId}/ips`)).map(mapIPAddress),
 	saveSubnet: (requester: Requester, subnet: Partial<Subnet> & Pick<Subnet, "cidr" | "description">) =>
 		json<Subnet>(requester, subnet.id ? `/subnets/${subnet.id}` : "/subnets", {
 			method: subnet.id ? "PATCH" : "POST",
@@ -41,12 +45,12 @@ export const api = {
 			body: JSON.stringify({ name: site.name.trim(), description: site.description.trim() }),
 		}),
 	deleteSite: (requester: Requester, id: string) => requester(`${API_BASE}/sites/${id}`, { method: "DELETE" }),
-	saveIp: (requester: Requester, subnetId: number, existing: IPAddress | undefined, ip: string, hostname: string) =>
-		json<IPAddress>(requester, existing ? `/subnets/${subnetId}/ips/${existing.id}` : `/subnets/${subnetId}/ips`, {
+	saveIp: async (requester: Requester, subnetId: number, existing: IPAddress | undefined, ip: string, hostname: string) =>
+		mapIPAddress(await json<IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }>(requester, existing ? `/subnets/${subnetId}/ips/${existing.id}` : `/subnets/${subnetId}/ips`, {
 			method: existing ? "PATCH" : "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(existing ? { hostname: hostname.trim() } : { ip, hostname: hostname.trim() }),
-		}),
+		})),
 	deleteIp: (requester: Requester, subnetId: number, id: string) => requester(`${API_BASE}/subnets/${subnetId}/ips/${id}`, { method: "DELETE" }),
 	importCSV: (requester: Requester, file: File) => {
 		const form = new FormData();
