@@ -50,6 +50,20 @@ export type KubernetesService = {
 	status?: KubernetesServiceStatus;
 };
 
+export type KubernetesServiceObservationAddress = KubernetesServiceAddress & {
+	ip_mode?: string;
+	match_count?: number;
+	matched_ip_address_id?: string;
+	matched_subnet_id?: number;
+};
+
+export type KubernetesServiceObservation = Omit<KubernetesService, "matched_addresses"> & {
+	external_name?: string;
+	match_status: KubernetesServiceStatus;
+	addresses: KubernetesServiceObservationAddress[];
+	hostnames?: { kind: string; hostname: string }[];
+};
+
 export type Site = {
 	id: string;
 	name: string;

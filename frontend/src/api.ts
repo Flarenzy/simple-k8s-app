@@ -1,5 +1,5 @@
 import { getEnv } from "./env";
-import type { IPAddress, ImportResult, Site, SiteStatistics, Subnet } from "./types";
+import type { IPAddress, ImportResult, KubernetesServiceObservation, Site, SiteStatistics, Subnet } from "./types";
 
 const API_BASE = getEnv("VITE_API_BASE", "/api/v1");
 
@@ -31,7 +31,8 @@ export const api = {
 	subnets: (requester: Requester) => json<Subnet[]>(requester, "/subnets"),
 	sites: (requester: Requester) => json<Site[]>(requester, "/sites"),
 	siteStatistics: (requester: Requester) => json<SiteStatistics[]>(requester, "/sites/statistics"),
-	ips: async (requester: Requester, subnetId: number) => (await json<Array<IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }>>(requester, `/subnets/${subnetId}/ips`)).map(mapIPAddress),
+	ips: async (requester: Requester, subnetId: number) => (await json<Array<IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }>>(requester, `/subnets/${subnetId}/ips`)).map((record) => mapIPAddress(record)),
+	kubernetesServices: (requester: Requester, subnetId: number) => json<KubernetesServiceObservation[]>(requester, `/subnets/${subnetId}/kubernetes-services`),
 	saveSubnet: (requester: Requester, subnet: Partial<Subnet> & Pick<Subnet, "cidr" | "description">) =>
 		json<Subnet>(requester, subnet.id ? `/subnets/${subnet.id}` : "/subnets", {
 			method: subnet.id ? "PATCH" : "POST",

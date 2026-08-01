@@ -226,8 +226,13 @@ input {
 .manual-hostname { display: grid; gap: 5px; min-width: 170px; }
 .manual-hostname span { color: #64748b; font-size: 11px; font-weight: 700; }
 .kubernetes-services { display: grid; gap: 8px; min-width: 270px; max-width: 480px; }
+.kubernetes-services-panel { margin-bottom: 18px; }
+.section-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.section-heading h2 { margin: 0; }
+.kubernetes-service-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
 .kubernetes-service { display: grid; gap: 5px; padding: 9px 10px; border: 1px solid #dbeafe; border-radius: 10px; background: #f8fbff; min-width: 0; }
 .kubernetes-service__heading, .kubernetes-service__meta, .kubernetes-service__ports { display: flex; align-items: center; gap: 7px; min-width: 0; flex-wrap: wrap; }
+.kubernetes-service__addresses { display: grid; gap: 4px; }
 .kubernetes-service__heading strong, .kubernetes-service__meta .mono { overflow-wrap: anywhere; min-width: 0; }
 .kubernetes-service__meta { color: #64748b; font-size: 12px; }
 .service-badge, .port-badge, .service-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; }
