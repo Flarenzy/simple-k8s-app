@@ -30,7 +30,10 @@ WITH due AS (
     SELECT subnets.id,
            due.last_snapshot_at,
            COUNT(ip_addresses.id),
-           POWER(2::numeric, (32 - masklen(subnets.cidr))::numeric)::bigint
+           GREATEST(
+               COUNT(ip_addresses.id),
+               POWER(2::numeric, (32 - masklen(subnets.cidr))::numeric)::bigint
+           )
     FROM subnets
     CROSS JOIN due
     LEFT JOIN ip_addresses ON ip_addresses.subnet_id = subnets.id
