@@ -18,6 +18,50 @@ export type IPAddress = {
 	subnet_id: number;
 	created_at: string;
 	updated_at: string;
+	kubernetes_services: KubernetesService[];
+};
+
+export type KubernetesServiceStatus = "matched" | "unmatched" | "ambiguous" | "no_usable_ip";
+
+export type KubernetesServiceAddress = {
+	ip: string;
+	kind: string;
+	match_status?: KubernetesServiceStatus;
+};
+
+export type KubernetesServicePort = {
+	name?: string;
+	protocol: string;
+	port: number;
+	target_port?: string | number;
+	app_protocol?: string;
+};
+
+export type KubernetesService = {
+	source: { key: string; name: string };
+	uid: string;
+	name: string;
+	namespace: string;
+	type: string;
+	dns_name: string;
+	matched_addresses: KubernetesServiceAddress[];
+	ports: KubernetesServicePort[];
+	observed_at: string;
+	status?: KubernetesServiceStatus;
+};
+
+export type KubernetesServiceObservationAddress = KubernetesServiceAddress & {
+	ip_mode?: string;
+	match_count?: number;
+	matched_ip_address_id?: string;
+	matched_subnet_id?: number;
+};
+
+export type KubernetesServiceObservation = Omit<KubernetesService, "matched_addresses"> & {
+	external_name?: string;
+	match_status: KubernetesServiceStatus;
+	addresses: KubernetesServiceObservationAddress[];
+	hostnames?: { kind: string; hostname: string }[];
 };
 
 export type Site = {
