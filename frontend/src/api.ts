@@ -22,8 +22,9 @@ async function json<T>(requester: Requester, path: string, init?: RequestInit): 
 	return response.json() as Promise<T>;
 }
 
-function mapIPAddress(record: IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }): IPAddress {
-	return { ...record, kubernetes_services: Array.isArray(record.kubernetes_services) ? record.kubernetes_services : [] };
+function mapIPAddress(record: IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }, fallbackServices: IPAddress["kubernetes_services"] = []): IPAddress {
+	const hasServices = Object.prototype.hasOwnProperty.call(record, "kubernetes_services");
+	return { ...record, kubernetes_services: hasServices && Array.isArray(record.kubernetes_services) ? record.kubernetes_services : hasServices ? [] : fallbackServices };
 }
 
 export const api = {
@@ -50,7 +51,7 @@ export const api = {
 			method: existing ? "PATCH" : "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(existing ? { hostname: hostname.trim() } : { ip, hostname: hostname.trim() }),
-		})),
+		}), existing?.kubernetes_services),
 	deleteIp: (requester: Requester, subnetId: number, id: string) => requester(`${API_BASE}/subnets/${subnetId}/ips/${id}`, { method: "DELETE" }),
 	importCSV: (requester: Requester, file: File) => {
 		const form = new FormData();
