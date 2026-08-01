@@ -9,7 +9,7 @@ image_tag="${KIAC_IMAGE_TAG:-}"
 pull_policy="${KIAC_IMAGE_PULL_POLICY:-Always}"
 discovery_site_id="${KIAC_DISCOVERY_SITE_ID:-}"
 discovery_namespaces="${KIAC_DISCOVERY_NAMESPACES:-default,ipam}"
-keycloak_host="${KIAC_KEYCLOAK_HOST:-keycloak.simplek8sapp.lan}"
+keycloak_host="${KIAC_KEYCLOAK_HOST:-}"
 postgres_secret="${KIAC_POSTGRES_SECRET:-ipam-postgres-postgresql}"
 postgres_workload="${KIAC_POSTGRES_WORKLOAD:-statefulset/ipam-postgres-postgresql}"
 
@@ -43,6 +43,11 @@ gateway_section="$(kubectl --context "$context" --namespace "$namespace" get htt
 gateway_namespace="${gateway_namespace:-$namespace}"
 gateway_protocol="$(kubectl --context "$context" --namespace "$gateway_namespace" get gateway "$gateway_name" -o "jsonpath={.spec.listeners[?(@.name=='$gateway_section')].protocol}")"
 [[ -n "$frontend_host" && -n "$gateway_protocol" ]] || { echo "The existing frontend route is not attached to a Gateway listener" >&2; exit 1; }
+
+if [[ -z "$keycloak_host" ]]; then
+	keycloak_host="$(kubectl --context "$context" --namespace "$namespace" get httproute "$release-keycloak" -o jsonpath='{.spec.hostnames[0]}')"
+fi
+[[ -n "$keycloak_host" ]] || { echo "The existing Keycloak route has no hostname; set KIAC_KEYCLOAK_HOST to override it" >&2; exit 1; }
 
 case "$gateway_protocol" in
 	HTTPS|https) scheme="https" ;;
@@ -108,7 +113,7 @@ if [[ -z "$discovery_site_id" ]]; then
 fi
 [[ "$discovery_site_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo "Invalid discovery site UUID: $discovery_site_id" >&2; exit 1; }
 
-discovery_args=()
+discovery_json='['
 IFS=',' read -r -a requested_namespaces <<< "$discovery_namespaces"
 for index in "${!requested_namespaces[@]}"; do
 	requested_namespace="${requested_namespaces[$index]}"
@@ -116,9 +121,10 @@ for index in "${!requested_namespaces[@]}"; do
 		echo "Invalid discovery namespace: $requested_namespace" >&2
 		exit 1
 	fi
-	discovery_args+=(--set-string "api.kubernetesDiscovery.namespaces[$index]=$requested_namespace")
+	[[ "$index" == "0" ]] || discovery_json+=','
+	discovery_json+="\"$requested_namespace\""
 done
-[[ "${#discovery_args[@]}" -gt 0 ]] || { echo "KIAC_DISCOVERY_NAMESPACES must not be empty" >&2; exit 1; }
+discovery_json+=']'
 
 helm upgrade --install "$release" "$chart" \
 	--namespace "$namespace" \
@@ -140,7 +146,7 @@ helm upgrade --install "$release" "$chart" \
 	--set-string api.kubernetesDiscovery.sourceKey=kiac-dev \
 	--set-string "api.kubernetesDiscovery.sourceName=kiac development" \
 	--set-string "api.kubernetesDiscovery.siteID=$discovery_site_id" \
-	"${discovery_args[@]}" \
+	--set-json "api.kubernetesDiscovery.namespaces=$discovery_json" \
 	--set-string "fe.env.VITE_KEYCLOAK_URL=$keycloak_url" \
 	--set-string fe.env.VITE_KEYCLOAK_REALM=ipam \
 	--set-string fe.env.VITE_KEYCLOAK_CLIENT_ID=ipam-fe \
