@@ -24,7 +24,8 @@ async function json<T>(requester: Requester, path: string, init?: RequestInit): 
 
 function mapIPAddress(record: IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }, fallbackServices: IPAddress["kubernetes_services"] = []): IPAddress {
 	const hasServices = Object.prototype.hasOwnProperty.call(record, "kubernetes_services");
-	return { ...record, kubernetes_services: hasServices && Array.isArray(record.kubernetes_services) ? record.kubernetes_services : hasServices ? [] : fallbackServices };
+	const services = hasServices && Array.isArray(record.kubernetes_services) ? record.kubernetes_services : undefined;
+	return { ...record, kubernetes_services: services?.length || !fallbackServices.length ? services ?? [] : fallbackServices };
 }
 
 export const api = {
