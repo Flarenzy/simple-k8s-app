@@ -40,3 +40,11 @@ type KubernetesDiscoveryRepository interface {
 	ListServicesBySubnetID(ctx context.Context, subnetID int64) (map[IPAddressID][]KubernetesServiceEnrichment, error)
 	ListAllServicesBySubnetID(ctx context.Context, subnetID int64) ([]KubernetesServiceObservation, error)
 }
+
+type ReportingRepository interface {
+	GetSettings(ctx context.Context) (ReportingSettings, error)
+	UpdateSettings(ctx context.Context, input UpdateReportingSettingsInput) (ReportingSettings, error)
+	ListSnapshots(ctx context.Context, subnetID int64, from, to time.Time) ([]SubnetUsageSnapshot, error)
+	CaptureDueSnapshots(ctx context.Context) (int64, error)
+	DeleteExpiredSnapshots(ctx context.Context) (int64, error)
+}

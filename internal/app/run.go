@@ -17,6 +17,7 @@ import (
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	apihttp "github.com/Flarenzy/simple-k8s-app/internal/http"
 	kubediscovery "github.com/Flarenzy/simple-k8s-app/internal/kubernetes"
+	reportingrunner "github.com/Flarenzy/simple-k8s-app/internal/reporting"
 )
 
 type Config struct {
@@ -104,9 +105,11 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	ipRepo := appdb.NewIPRepository(queries)
 	sitesRepo := appdb.NewSitesRepository(queries)
 	discoveryRepo := appdb.NewKubernetesDiscoveryRepository(pool)
+	reportingRepo := appdb.NewReportingRepository(queries)
 	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkServiceWithDiscovery(subnetRepo, ipRepo, sitesRepo, discoveryRepo))
 	sitesService := domain.NewSitesService(sitesRepo)
 	discoveryService := domain.NewKubernetesDiscoveryService(discoveryRepo)
+	reportingService := domain.NewReportingService(reportingRepo, subnetRepo)
 	authenticator, err := newAuthenticator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("initialize authenticator: %w", err)
@@ -115,6 +118,8 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	api := apihttp.NewAPIWithCORS(logger, pool, networkService, sitesService, authenticator, cfg.CORSAllowedOrigins)
 	api.ImportService = domain.NewCSVImportService(sitesService, networkService)
 	api.DiscoveryService = discoveryService
+	api.ReportingService = reportingService
+	go reportingrunner.NewRunner(reportingService, logger).Run(ctx)
 
 	if cfg.KubernetesDiscovery.Enabled {
 		client, clientErr := kubediscovery.NewClient(cfg.KubernetesDiscovery)

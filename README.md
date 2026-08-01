@@ -238,6 +238,14 @@ Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS 
 
 Keycloak assigns client roles on `ipam-api`; the API does not treat master-realm or Admin Console privileges as application access. `admin` can read, create, edit, and delete; `editor` can read, create, and edit but cannot delete; `read-only` can only read. Authenticated users without one of these roles receive `403 Forbidden`. When authentication is intentionally disabled, the application uses the local identity and role `admin` so existing local workflows retain full access. Health, readiness, Swagger, CORS preflight, and Keycloak's realm discovery remain reachable without an application token.
 
+## Subnet usage reporting
+
+The API records periodic IPv4 subnet-usage snapshots and shows the first history chart on subnet detail. The global policy defaults to hourly capture and 30 days of retention. Editors and admins can choose hourly, daily, or weekly capture and retain between 1 and 180 days from the same screen; read-only users can view the policy and history without changing it.
+
+`GET /api/v1/reporting/settings` reads the policy, `PATCH /api/v1/reporting/settings` updates it, and `GET /api/v1/subnets/{id}/usage-history?range=7d` returns stored points for one of the fixed `24h`, `7d`, `30d`, `90d`, or `180d` windows. History starts when the periodic runner captures a snapshot: the application does not infer or backfill past usage from current IP rows. Missed intervals remain absent in the response and disconnected in the chart.
+
+Snapshot capture counts manual IPAM allocation rows only. Kubernetes Service observations remain an independent, current-state enrichment and are never used as allocation history. IPv6 history is outside this MVP and returns `400 Bad Request`; IPv6 subnets are omitted from snapshot runs.
+
 ## Kubernetes Service discovery
 
 Kubernetes discovery is an optional, read-only enrichment process. It lists core `v1/Service` objects, derives `service.namespace.svc.<cluster-domain>` names, and associates ClusterIPs and literal LoadBalancer ingress IPs only with existing IPAM addresses in the configured site. It never creates or deletes IPAM rows and never changes the manually maintained `hostname` field.

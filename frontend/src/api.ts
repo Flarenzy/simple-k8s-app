@@ -1,5 +1,5 @@
 import { getEnv } from "./env";
-import type { IPAddress, ImportResult, KubernetesServiceObservation, Site, SiteStatistics, Subnet } from "./types";
+import type { IPAddress, ImportResult, KubernetesServiceObservation, ReportingSettings, Site, SiteStatistics, Subnet, SubnetUsageHistory, UsageRange } from "./types";
 
 const API_BASE = getEnv("VITE_API_BASE", "/api/v1");
 
@@ -34,6 +34,14 @@ export const api = {
 	siteStatistics: (requester: Requester) => json<SiteStatistics[]>(requester, "/sites/statistics"),
 	ips: async (requester: Requester, subnetId: number) => (await json<Array<IPAddress & { kubernetes_services?: IPAddress["kubernetes_services"] }>>(requester, `/subnets/${subnetId}/ips`)).map((record) => mapIPAddress(record)),
 	kubernetesServices: (requester: Requester, subnetId: number) => json<KubernetesServiceObservation[]>(requester, `/subnets/${subnetId}/kubernetes-services`),
+	reportingSettings: (requester: Requester) => json<ReportingSettings>(requester, "/reporting/settings"),
+	usageHistory: (requester: Requester, subnetId: number, range: UsageRange) => json<SubnetUsageHistory>(requester, `/subnets/${subnetId}/usage-history?range=${range}`),
+	updateReportingSettings: (requester: Requester, settings: Pick<ReportingSettings, "cadence" | "retention_days">) =>
+		json<ReportingSettings>(requester, "/reporting/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(settings),
+		}),
 	saveSubnet: (requester: Requester, subnet: Partial<Subnet> & Pick<Subnet, "cidr" | "description">) =>
 		json<Subnet>(requester, subnet.id ? `/subnets/${subnet.id}` : "/subnets", {
 			method: subnet.id ? "PATCH" : "POST",

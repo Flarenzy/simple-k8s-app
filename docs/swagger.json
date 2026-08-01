@@ -99,6 +99,84 @@
                 }
             }
         },
+        "/api/v1/reporting/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reporting"
+                ],
+                "summary": "Get subnet usage reporting settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.ReportingSettingsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reporting"
+                ],
+                "summary": "Update subnet usage reporting settings",
+                "parameters": [
+                    {
+                        "description": "Reporting settings",
+                        "name": "settings",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.ReportingSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.ReportingSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/sites": {
             "get": {
                 "security": [
@@ -962,6 +1040,71 @@
                 }
             }
         },
+        "/api/v1/subnets/{id}/usage-history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reporting"
+                ],
+                "summary": "Get periodic subnet usage snapshots",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "24h",
+                            "7d",
+                            "30d",
+                            "90d",
+                            "180d"
+                        ],
+                        "type": "string",
+                        "default": "7d",
+                        "description": "Bounded history range",
+                        "name": "range",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.SubnetUsageHistoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "tags": [
@@ -1372,6 +1515,48 @@
                 }
             }
         },
+        "http.ReportingSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "cadence": {
+                    "type": "string",
+                    "enum": [
+                        "hourly",
+                        "daily",
+                        "weekly"
+                    ],
+                    "example": "hourly"
+                },
+                "retention_days": {
+                    "type": "integer",
+                    "maximum": 180,
+                    "minimum": 1,
+                    "example": 30
+                }
+            }
+        },
+        "http.ReportingSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "cadence": {
+                    "type": "string",
+                    "enum": [
+                        "hourly",
+                        "daily",
+                        "weekly"
+                    ],
+                    "example": "hourly"
+                },
+                "last_snapshot_at": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "retention_days": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
         "http.RowError": {
             "type": "object",
             "properties": {
@@ -1504,6 +1689,54 @@
                 },
                 "used_ips": {
                     "type": "integer"
+                }
+            }
+        },
+        "http.SubnetUsageHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "cadence": {
+                    "type": "string",
+                    "example": "hourly"
+                },
+                "from": {
+                    "type": "string",
+                    "example": "2026-07-25T10:00:00Z"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.SubnetUsageSnapshotResponse"
+                    }
+                },
+                "range": {
+                    "type": "string",
+                    "example": "7d"
+                },
+                "subnet_id": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "to": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                }
+            }
+        },
+        "http.SubnetUsageSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "captured_at": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "total_ips": {
+                    "type": "integer",
+                    "example": 256
+                },
+                "used_ips": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },

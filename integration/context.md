@@ -4,6 +4,8 @@ The integration suite under `integration/api` starts PostgreSQL and Keycloak wit
 
 Extend the customer journey when adding a feature so persistence, authentication, routing, and response contracts are checked together. Run with `make test-integration`.
 
+The reporting journey verifies existing read/editor RBAC, policy persistence and retention validation, and history reads backed by stored snapshot fixtures.
+
 ## Container runtime compatibility
 
 `make test-integration` selects a provider at startup and prints the selection and detected alternatives. On an Apple silicon Mac, a running Apple Container installation is preferred. Elsewhere, or when Apple Container is unavailable and a Docker/Podman endpoint is detected, the existing Testcontainers provider is used. Override automatic selection with `INTEGRATION_CONTAINER_RUNTIME=apple` or `INTEGRATION_CONTAINER_RUNTIME=testcontainers`; `docker` and `podman` are accepted as aliases for the Testcontainers path.

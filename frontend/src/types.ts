@@ -87,6 +87,31 @@ export type SiteStatistics = Site & {
 
 export type SubnetUsage = { used: number; total: number };
 
+export type ReportingCadence = "hourly" | "daily" | "weekly";
+
+export type ReportingSettings = {
+	cadence: ReportingCadence;
+	retention_days: number;
+	last_snapshot_at?: string;
+};
+
+export type SubnetUsageSnapshot = {
+	captured_at: string;
+	used_ips: number;
+	total_ips: number;
+};
+
+export type SubnetUsageHistory = {
+	subnet_id: number;
+	range: UsageRange;
+	from: string;
+	to: string;
+	cadence: ReportingCadence;
+	points: SubnetUsageSnapshot[];
+};
+
+export type UsageRange = "24h" | "7d" | "30d" | "90d" | "180d";
+
 export type ImportRowError = { row: number; message: string };
 
 export type ImportResult = {

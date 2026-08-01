@@ -60,6 +60,32 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"subnet not found"`
 }
 
+type ReportingSettingsRequest struct {
+	Cadence       string `json:"cadence" example:"hourly" enums:"hourly,daily,weekly"`
+	RetentionDays int32  `json:"retention_days" example:"30" minimum:"1" maximum:"180"`
+}
+
+type ReportingSettingsResponse struct {
+	Cadence        string     `json:"cadence" example:"hourly" enums:"hourly,daily,weekly"`
+	RetentionDays  int32      `json:"retention_days" example:"30"`
+	LastSnapshotAt *time.Time `json:"last_snapshot_at,omitempty" example:"2026-08-01T10:00:00Z"`
+}
+
+type SubnetUsageSnapshotResponse struct {
+	CapturedAt time.Time `json:"captured_at" example:"2026-08-01T10:00:00Z"`
+	UsedIPs    int64     `json:"used_ips" example:"42"`
+	TotalIPs   int64     `json:"total_ips" example:"256"`
+}
+
+type SubnetUsageHistoryResponse struct {
+	SubnetID int64                         `json:"subnet_id" example:"4"`
+	Range    string                        `json:"range" example:"7d"`
+	From     time.Time                     `json:"from" example:"2026-07-25T10:00:00Z"`
+	To       time.Time                     `json:"to" example:"2026-08-01T10:00:00Z"`
+	Cadence  string                        `json:"cadence" example:"hourly"`
+	Points   []SubnetUsageSnapshotResponse `json:"points"`
+}
+
 type ImportResponse struct {
 	Processed int        `json:"processed"`
 	Created   int        `json:"created"`
@@ -186,6 +212,26 @@ func subnetToResponse(s domain.Subnet) SubnetResponse {
 		Description: s.Description,
 		CreatedAt:   s.CreatedAt,
 		UpdatedAt:   s.UpdatedAt,
+	}
+}
+
+func reportingSettingsToResponse(settings domain.ReportingSettings) ReportingSettingsResponse {
+	return ReportingSettingsResponse{
+		Cadence: string(settings.Cadence), RetentionDays: settings.RetentionDays,
+		LastSnapshotAt: settings.LastSnapshotAt,
+	}
+}
+
+func subnetUsageHistoryToResponse(history domain.SubnetUsageHistory) SubnetUsageHistoryResponse {
+	points := make([]SubnetUsageSnapshotResponse, 0, len(history.Points))
+	for _, point := range history.Points {
+		points = append(points, SubnetUsageSnapshotResponse{
+			CapturedAt: point.CapturedAt, UsedIPs: point.UsedIPs, TotalIPs: point.TotalIPs,
+		})
+	}
+	return SubnetUsageHistoryResponse{
+		SubnetID: history.SubnetID, Range: history.Range, From: history.From, To: history.To,
+		Cadence: string(history.Cadence), Points: points,
 	}
 }
 
