@@ -2,7 +2,7 @@ import type { KubernetesServiceSummary, SiteStatistics, Subnet, SubnetUsage } fr
 
 type Props = { subnets: Subnet[]; sites: SiteStatistics[]; usage: Record<number, SubnetUsage>; summaries: Record<number, KubernetesServiceSummary>; loading: boolean; error: string | null; canCreate: boolean; onSelectSubnet: (subnet: Subnet) => void; onAddSubnet: () => void };
 const format = (value: number) => value.toLocaleString();
-const serviceSummary = (summary?: KubernetesServiceSummary) => !summary ? "Loading Services…" : summary.state === "unavailable" ? "Kubernetes discovery unavailable" : summary.count ? `${summary.count} Service${summary.count === 1 ? "" : "s"} observed` : "No Services observed";
+const serviceSummary = (summary?: KubernetesServiceSummary) => !summary || summary.state === "loading" ? "Load status from subnet inventory" : summary.state === "unavailable" ? "Kubernetes discovery unavailable" : summary.count ? `${summary.count} Service${summary.count === 1 ? "" : "s"} observed` : "No Services observed";
 
 export default function DashboardView({ subnets, sites, usage, summaries, loading, error, canCreate, onSelectSubnet, onAddSubnet }: Props) {
 	const total = subnets.reduce((sum, subnet) => sum + (usage[subnet.id]?.total ?? 0), 0);
