@@ -9,4 +9,5 @@ var (
 	ErrInvalidInput   = errors.New("invalid input")
 	ErrConflict       = errors.New("conflict")
 	ErrUnauthorized   = errors.New("unauthorized")
+	ErrDiscoveryBusy  = errors.New("kubernetes discovery reconciliation already running")
 )

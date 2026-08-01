@@ -71,6 +71,10 @@ Create the name of the service account to use
 {{- end }}
 {{- end }}
 
+{{- define "ipam.discoveryServiceAccountName" -}}
+{{- printf "%s-discovery" (include "ipam.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end -}}
+
 {{- define "ipam.apiFullname" -}}{{ include "ipam.fullname" . }}-api{{- end -}}
 {{- define "ipam.feFullname" -}}{{ include "ipam.fullname" . }}-fe{{- end -}}
 {{- define "ipam.keycloakFullname" -}}{{ include "ipam.fullname" . }}-keycloak{{- end -}}

@@ -19,6 +19,70 @@ type IpAddress struct {
 	SubnetID  int64              `json:"subnet_id"`
 }
 
+type KubernetesService struct {
+	ID              pgtype.UUID        `json:"id"`
+	SourceID        pgtype.UUID        `json:"source_id"`
+	KubernetesUid   string             `json:"kubernetes_uid"`
+	Namespace       string             `json:"namespace"`
+	Name            string             `json:"name"`
+	ServiceType     string             `json:"service_type"`
+	ResourceVersion string             `json:"resource_version"`
+	ExternalName    string             `json:"external_name"`
+	DnsName         string             `json:"dns_name"`
+	ObservedAt      pgtype.Timestamptz `json:"observed_at"`
+	Active          bool               `json:"active"`
+	StaleAt         pgtype.Timestamptz `json:"stale_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type KubernetesServiceAddress struct {
+	ID          int64       `json:"id"`
+	ServiceID   pgtype.UUID `json:"service_id"`
+	Kind        string      `json:"kind"`
+	Address     netip.Addr  `json:"address"`
+	IpMode      pgtype.Text `json:"ip_mode"`
+	IpAddressID pgtype.UUID `json:"ip_address_id"`
+	MatchStatus string      `json:"match_status"`
+	MatchCount  int32       `json:"match_count"`
+}
+
+type KubernetesServiceHostname struct {
+	ID        int64       `json:"id"`
+	ServiceID pgtype.UUID `json:"service_id"`
+	Kind      string      `json:"kind"`
+	Hostname  string      `json:"hostname"`
+}
+
+type KubernetesServicePort struct {
+	ID          int64       `json:"id"`
+	ServiceID   pgtype.UUID `json:"service_id"`
+	Name        pgtype.Text `json:"name"`
+	Protocol    string      `json:"protocol"`
+	Port        int32       `json:"port"`
+	TargetPort  string      `json:"target_port"`
+	AppProtocol pgtype.Text `json:"app_protocol"`
+	NodePort    pgtype.Int4 `json:"node_port"`
+}
+
+type KubernetesSource struct {
+	ID             pgtype.UUID        `json:"id"`
+	SourceKey      string             `json:"source_key"`
+	Name           string             `json:"name"`
+	SiteID         pgtype.UUID        `json:"site_id"`
+	ClusterDomain  string             `json:"cluster_domain"`
+	NamespaceScope []string           `json:"namespace_scope"`
+	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
+	LastSuccessAt  pgtype.Timestamptz `json:"last_success_at"`
+	LastError      string             `json:"last_error"`
+	ServiceCount   int32              `json:"service_count"`
+	MatchedCount   int32              `json:"matched_count"`
+	UnmatchedCount int32              `json:"unmatched_count"`
+	AmbiguousCount int32              `json:"ambiguous_count"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Site struct {
 	ID          pgtype.UUID        `json:"id"`
 	Name        string             `json:"name"`

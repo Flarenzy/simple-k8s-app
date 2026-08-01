@@ -24,6 +24,17 @@ api:
     # Optional JWKS URL for in-cluster key fetches. Use this when the public
     # issuer host is not resolvable from inside the cluster.
     jwksURL: ""
+  kubernetesDiscovery:
+    # Opt-in Service discovery. When enabled, source/site/scope are required.
+    enabled: false
+    sourceKey: ""
+    sourceName: ""
+    siteID: ""
+    namespaces: []
+    clusterDomain: cluster.local
+    interval: 5m
+    requestTimeout: 15s
+    staleRetention: 168h
   livenessProbe:
     httpGet:
       path: /healthz

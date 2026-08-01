@@ -1,5 +1,10 @@
 basePath: /
 definitions:
+  http.AssignSubnetSiteRequest:
+    properties:
+      site_id:
+        type: string
+    type: object
   http.CreateIPRequest:
     properties:
       hostname:
@@ -43,12 +48,138 @@ definitions:
       ip:
         example: 10.0.0.1
         type: string
+      kubernetes_services:
+        items:
+          $ref: '#/definitions/http.KubernetesServiceResponse'
+        type: array
       subnet_id:
         example: 4
         type: integer
       updated_at:
         example: "2024-05-10T15:04:05Z"
         type: string
+    type: object
+  http.ImportResponse:
+    properties:
+      created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/http.RowError'
+        type: array
+      failed:
+        type: integer
+      processed:
+        type: integer
+      updated:
+        type: integer
+    type: object
+  http.KubernetesDiscoveryStatusResponse:
+    properties:
+      ambiguous:
+        type: integer
+      cluster_domain:
+        type: string
+      last_attempt_at:
+        type: string
+      last_error:
+        type: string
+      last_success_at:
+        type: string
+      matched:
+        type: integer
+      namespaces:
+        items:
+          type: string
+        type: array
+      services:
+        type: integer
+      site_id:
+        type: string
+      source:
+        $ref: '#/definitions/http.KubernetesSourceResponse'
+      state:
+        example: healthy
+        type: string
+      unmatched:
+        type: integer
+    type: object
+  http.KubernetesMatchedAddressResponse:
+    properties:
+      ip:
+        example: 10.96.12.4
+        type: string
+      kind:
+        example: cluster_ip
+        type: string
+    type: object
+  http.KubernetesServicePortResponse:
+    properties:
+      app_protocol:
+        example: https
+        type: string
+      name:
+        example: https
+        type: string
+      node_port:
+        example: 30443
+        type: integer
+      port:
+        example: 443
+        type: integer
+      protocol:
+        example: TCP
+        type: string
+      target_port:
+        example: "8443"
+        type: string
+    type: object
+  http.KubernetesServiceResponse:
+    properties:
+      dns_name:
+        example: orders.commerce.svc.cluster.local
+        type: string
+      matched_addresses:
+        items:
+          $ref: '#/definitions/http.KubernetesMatchedAddressResponse'
+        type: array
+      name:
+        example: orders
+        type: string
+      namespace:
+        example: commerce
+        type: string
+      observed_at:
+        example: "2026-08-01T10:00:00Z"
+        type: string
+      ports:
+        items:
+          $ref: '#/definitions/http.KubernetesServicePortResponse'
+        type: array
+      source:
+        $ref: '#/definitions/http.KubernetesSourceResponse'
+      type:
+        example: LoadBalancer
+        type: string
+      uid:
+        example: 02e12c93-1234-5678-90ab-abcdefabcdef
+        type: string
+    type: object
+  http.KubernetesSourceResponse:
+    properties:
+      key:
+        example: prod-cluster
+        type: string
+      name:
+        example: Production
+        type: string
+    type: object
+  http.RowError:
+    properties:
+      message:
+        type: string
+      row:
+        type: integer
     type: object
   http.SiteRequest:
     properties:
@@ -67,12 +198,20 @@ definitions:
         type: string
       description:
         type: string
+      free_ips:
+        type: integer
       id:
         type: string
       name:
         type: string
+      subnet_count:
+        type: integer
+      total_ips:
+        type: integer
       updated_at:
         type: string
+      used_ips:
+        type: integer
     type: object
   http.SiteStatisticsResponse:
     properties:
@@ -82,6 +221,8 @@ definitions:
         type: string
       free_ip_count:
         type: integer
+      free_ips:
+        type: integer
       id:
         type: string
       name:
@@ -90,9 +231,13 @@ definitions:
         type: integer
       total_ip_count:
         type: integer
+      total_ips:
+        type: integer
       updated_at:
         type: string
       used_ip_count:
+        type: integer
+      used_ips:
         type: integer
     type: object
   http.SubnetResponse:
@@ -112,9 +257,13 @@ definitions:
       site_id:
         example: 50e8400-e29b-41d4-a716-446655440000
         type: string
+      total_ips:
+        type: integer
       updated_at:
         example: "2024-05-10T15:04:05Z"
         type: string
+      used_ips:
+        type: integer
     type: object
   http.UpdateIPRequest:
     properties:
@@ -136,6 +285,56 @@ info:
   title: Simple IPAM API
   version: "1.0"
 paths:
+  /api/v1/import/csv:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: CSV file with site,cidr,ip,description columns
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.ImportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import sites, subnets, and IP metadata
+      tags:
+      - import
+  /api/v1/kubernetes/sources:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/http.KubernetesDiscoveryStatusResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Kubernetes discovery source status
+      tags:
+      - kubernetes
   /api/v1/sites:
     get:
       produces:
@@ -604,6 +803,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Update ip under subnet
+      tags:
+      - subnets
+  /api/v1/subnets/{id}/site:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Subnet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Site assignment
+        in: body
+        name: site
+        required: true
+        schema:
+          $ref: '#/definitions/http.AssignSubnetSiteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.SubnetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Assign subnet to site
       tags:
       - subnets
   /healthz:

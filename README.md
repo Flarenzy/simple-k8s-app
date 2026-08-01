@@ -218,6 +218,67 @@ Wait for Traefik to observe the updated Secret, then rerun the status and HTTPS 
     - `VITE_API_BASE=/api/v1`
 - The local Keycloak realm import comes from `dev/ipam-realm.json` and is scoped to `localhost:5173` / `127.0.0.1:5173`.
 
+## Kubernetes Service discovery
+
+Kubernetes discovery is an optional, read-only enrichment process. It lists core `v1/Service` objects, derives `service.namespace.svc.<cluster-domain>` names, and associates ClusterIPs and literal LoadBalancer ingress IPs only with existing IPAM addresses in the configured site. It never creates or deletes IPAM rows and never changes the manually maintained `hostname` field.
+
+Discovery is disabled by default. Enable it with these API environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `KUBERNETES_DISCOVERY_ENABLED` | `false` | Enables the client and background runner. |
+| `KUBERNETES_DISCOVERY_SOURCE_KEY` | none | Stable operator-chosen cluster/source identity. |
+| `KUBERNETES_DISCOVERY_SOURCE_NAME` | source key | Display name returned by the API. |
+| `KUBERNETES_DISCOVERY_SITE_ID` | none | Existing IPAM site UUID used as the exact-match boundary. |
+| `KUBERNETES_DISCOVERY_AUTH_MODE` | `in_cluster` | `in_cluster` or `kubeconfig`. |
+| `KUBERNETES_DISCOVERY_KUBECONFIG_PATH` | none | Explicit path required in `kubeconfig` mode; there is no home-directory fallback. |
+| `KUBERNETES_DISCOVERY_KUBECONFIG_CONTEXT` | kubeconfig current context | Optional explicit context in `kubeconfig` mode. |
+| `KUBERNETES_DISCOVERY_NAMESPACES` | none | Comma-separated namespace names, or `*` by itself. |
+| `KUBERNETES_DISCOVERY_CLUSTER_DOMAIN` | `cluster.local` | Suffix used for derived Service DNS names. |
+| `KUBERNETES_DISCOVERY_INTERVAL` | `5m` | Complete-snapshot reconciliation interval. |
+| `KUBERNETES_DISCOVERY_REQUEST_TIMEOUT` | `15s` | Deadline for a complete Kubernetes list and status writes. |
+| `KUBERNETES_DISCOVERY_STALE_RETENTION` | `168h` | Retention for inactive Service observations before cleanup. |
+
+For local discovery against the `kiac` context, first create the target site in IPAM, then run the API with an explicit kubeconfig:
+
+```bash
+export KUBERNETES_DISCOVERY_ENABLED=true
+export KUBERNETES_DISCOVERY_SOURCE_KEY=kiac-dev
+export KUBERNETES_DISCOVERY_SOURCE_NAME='kiac development'
+export KUBERNETES_DISCOVERY_SITE_ID='<existing-site-uuid>'
+export KUBERNETES_DISCOVERY_AUTH_MODE=kubeconfig
+export KUBERNETES_DISCOVERY_KUBECONFIG_PATH="$KUBECONFIG"
+export KUBERNETES_DISCOVERY_KUBECONFIG_CONTEXT=kiac-dev
+export KUBERNETES_DISCOVERY_NAMESPACES=default,ipam
+make run-api
+```
+
+If `KUBECONFIG` is unset, supply the explicit file path instead. The production Helm path always uses in-cluster ServiceAccount credentials. A named namespace scope creates only `get`, `list`, and `watch` access to core Services in those namespaces; an explicit `*` scope creates the equivalent cluster-wide grant:
+
+```bash
+helm upgrade --install ipam deploy/helm/ipam -n ipam \
+  --set api.kubernetesDiscovery.enabled=true \
+  --set api.kubernetesDiscovery.sourceKey=kiac-prod \
+  --set api.kubernetesDiscovery.siteID='<existing-site-uuid>' \
+  --set 'api.kubernetesDiscovery.namespaces[0]=default'
+```
+
+Every IP response contains a non-null `kubernetes_services` array. `GET /api/v1/kubernetes/sources` is protected by the same bearer-token boundary as the other application routes and reports `pending`, `healthy`, or `degraded` source state. A Service is linked only when its address has exactly one match inside the bound site; zero matches remain unmatched and overlapping matches remain ambiguous. Headless and ExternalName Services, pending LoadBalancers, and hostname-only LoadBalancer ingress are retained without invented IP associations.
+
+A failed namespace list, timeout, RBAC denial, malformed observed address, or persistence failure never publishes a partial snapshot. The last successful Service associations remain available, `/readyz` continues to check PostgreSQL only, and the source status becomes degraded. A later complete empty snapshot is authoritative and marks the previous Services inactive.
+
+Validation commands:
+
+```bash
+make test
+make test-integration
+npm --prefix frontend run build
+make sqlc
+make docs
+helm lint deploy/helm/ipam
+helm template ipam deploy/helm/ipam
+```
+
 ## Integration Tests
 
 Run the PostgreSQL- and Keycloak-backed API suite with:

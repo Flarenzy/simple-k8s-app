@@ -11,9 +11,14 @@ import (
 )
 
 type networkService struct {
-	subnets SubnetRepository
-	ips     IPRepository
-	sites   SiteRepository
+	subnets   SubnetRepository
+	ips       IPRepository
+	sites     SiteRepository
+	discovery KubernetesDiscoveryRepository
+}
+
+func NewNetworkServiceWithDiscovery(subnets SubnetRepository, ips IPRepository, sites SiteRepository, discovery KubernetesDiscoveryRepository) NetworkService {
+	return &networkService{subnets: subnets, ips: ips, sites: sites, discovery: discovery}
 }
 
 func NewNetworkService(subnets SubnetRepository, ips IPRepository, sites ...SiteRepository) NetworkService {
@@ -138,7 +143,18 @@ func (s *networkService) ListIPs(ctx context.Context, subnetID int64) ([]IPAddre
 		}
 		return nil, err
 	}
-	return s.ips.ListBySubnetID(ctx, subnetID)
+	ips, err := s.ips.ListBySubnetID(ctx, subnetID)
+	if err != nil || s.discovery == nil {
+		return ips, err
+	}
+	enrichments, err := s.discovery.ListServicesBySubnetID(ctx, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ips {
+		ips[i].KubernetesServices = enrichments[ips[i].ID]
+	}
+	return ips, nil
 }
 
 func (s *networkService) CreateIP(ctx context.Context, subnetID int64, input CreateIPInput) (IPAddress, error) {

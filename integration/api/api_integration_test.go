@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -27,6 +28,9 @@ import (
 
 	containerruntime "github.com/Flarenzy/simple-k8s-app/integration/containerruntime"
 	app "github.com/Flarenzy/simple-k8s-app/internal/app"
+	appdb "github.com/Flarenzy/simple-k8s-app/internal/db"
+	"github.com/Flarenzy/simple-k8s-app/internal/domain"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -51,6 +55,7 @@ type integrationSuite struct {
 	httpClient *http.Client
 	baseURL    string
 	issuerURL  string
+	dsn        string
 
 	postgres managedContainer
 	keycloak managedContainer
@@ -78,10 +83,39 @@ type siteResponse struct {
 }
 
 type ipResponse struct {
-	ID       string `json:"id"`
-	IP       string `json:"ip"`
-	Hostname string `json:"hostname"`
-	SubnetID int64  `json:"subnet_id"`
+	ID                 string `json:"id"`
+	IP                 string `json:"ip"`
+	Hostname           string `json:"hostname"`
+	SubnetID           int64  `json:"subnet_id"`
+	KubernetesServices []struct {
+		Source struct {
+			Key  string `json:"key"`
+			Name string `json:"name"`
+		} `json:"source"`
+		UID              string `json:"uid"`
+		Name             string `json:"name"`
+		Namespace        string `json:"namespace"`
+		Type             string `json:"type"`
+		DNSName          string `json:"dns_name"`
+		MatchedAddresses []struct {
+			IP   string `json:"ip"`
+			Kind string `json:"kind"`
+		} `json:"matched_addresses"`
+		Ports []struct {
+			Name       string `json:"name"`
+			Protocol   string `json:"protocol"`
+			Port       int32  `json:"port"`
+			TargetPort string `json:"target_port"`
+		} `json:"ports"`
+	} `json:"kubernetes_services"`
+}
+
+type kubernetesStatusResponse struct {
+	Source struct {
+		Key string `json:"key"`
+	} `json:"source"`
+	State         string     `json:"state"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
 }
 
 type importResponse struct {
@@ -206,6 +240,15 @@ func TestInfrastructureAndAuthBoundaries(t *testing.T) {
 	}
 	s.closeBody(t, resp)
 
+	resp, err = s.get(t, "/api/v1/kubernetes/sources", "")
+	if err != nil {
+		t.Fatalf("unauthenticated discovery status request: %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for discovery status without token, got %d", resp.StatusCode)
+	}
+	s.closeBody(t, resp)
+
 	resp, err = s.get(t, "/api/v1/subnets", "")
 	if err != nil {
 		t.Fatalf("unauthenticated request: %v", err)
@@ -235,6 +278,190 @@ func TestInfrastructureAndAuthBoundaries(t *testing.T) {
 
 	var subnets []subnetResponse
 	s.decodeJSON(t, resp, &subnets)
+}
+
+func TestKubernetesDiscoveryReconciliationAndEnrichment(t *testing.T) {
+	s := mustSuite(t)
+	token := s.mustToken(t)
+
+	createSiteResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", token, map[string]any{"name": "Kubernetes discovery site"})
+	if err != nil || createSiteResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create site: status=%v err=%v", createSiteResp.StatusCode, err)
+	}
+	var site siteResponse
+	s.decodeJSON(t, createSiteResp, &site)
+
+	createSubnetResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/subnets", token, map[string]any{
+		"cidr": "10.88.0.0/24", "site_id": site.ID, "description": "service addresses",
+	})
+	if err != nil || createSubnetResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create subnet: status=%v err=%v", createSubnetResp.StatusCode, err)
+	}
+	var subnet subnetResponse
+	s.decodeJSON(t, createSubnetResp, &subnet)
+
+	createIPResp, err := s.jsonRequest(t, http.MethodPost, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token, map[string]any{
+		"ip": "10.88.0.10", "hostname": "manual-orders-name",
+	})
+	if err != nil || createIPResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create ip: status=%v err=%v", createIPResp.StatusCode, err)
+	}
+	s.closeBody(t, createIPResp)
+
+	pool, err := appdb.NewPool(context.Background(), s.dsn)
+	if err != nil {
+		t.Fatalf("open discovery repository pool: %v", err)
+	}
+	defer pool.Close()
+	repository := appdb.NewKubernetesDiscoveryRepository(pool)
+	siteID := uuid.MustParse(site.ID)
+	source := domain.KubernetesSourceConfig{Key: "integration-cluster", Name: "Integration cluster", SiteID: siteID, ClusterDomain: "cluster.test", Namespaces: []string{"commerce"}}
+	source.StaleRetention = 7 * 24 * time.Hour
+	observedAt := time.Now().UTC().Truncate(time.Microsecond)
+	result, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{{
+		UID: "service-uid-1", Namespace: "commerce", Name: "orders", Type: "LoadBalancer", ResourceVersion: "1",
+		DNSName:   "orders.commerce.svc.cluster.test",
+		Addresses: []domain.KubernetesServiceAddress{{Kind: "cluster_ip", Address: netip.MustParseAddr("10.88.0.10")}, {Kind: "load_balancer", Address: netip.MustParseAddr("192.0.2.88")}},
+		Ports:     []domain.KubernetesServicePort{{Name: "https", Protocol: "TCP", Port: 443, TargetPort: "8443"}},
+	}}, observedAt)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.Matched != 1 || result.Unmatched != 1 || result.Ambiguous != 0 {
+		t.Fatalf("unexpected match result: %+v", result)
+	}
+
+	listResp, err := s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil || listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list enriched ips: status=%v err=%v", listResp.StatusCode, err)
+	}
+	var ips []ipResponse
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips) != 1 || ips[0].Hostname != "manual-orders-name" || len(ips[0].KubernetesServices) != 1 {
+		t.Fatalf("unexpected enriched IP: %+v", ips)
+	}
+	service := ips[0].KubernetesServices[0]
+	if service.Source.Key != source.Key || service.UID != "service-uid-1" || service.DNSName != "orders.commerce.svc.cluster.test" || len(service.MatchedAddresses) != 1 || len(service.Ports) != 1 {
+		t.Fatalf("unexpected service enrichment: %+v", service)
+	}
+
+	if err := repository.RecordFailure(context.Background(), source, observedAt.Add(time.Minute), "forbidden"); err != nil {
+		t.Fatalf("record failure: %v", err)
+	}
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list after failure: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 1 || ips[0].Hostname != "manual-orders-name" {
+		t.Fatalf("last-known-good enrichment was not preserved: %+v", ips[0])
+	}
+
+	statusResp, err := s.get(t, "/api/v1/kubernetes/sources", token)
+	if err != nil || statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("discovery status: status=%v err=%v", statusResp.StatusCode, err)
+	}
+	var statuses []kubernetesStatusResponse
+	s.decodeJSON(t, statusResp, &statuses)
+	var sourceStatus kubernetesStatusResponse
+	for _, status := range statuses {
+		if status.Source.Key == source.Key {
+			sourceStatus = status
+		}
+	}
+	if sourceStatus.State != "degraded" || sourceStatus.LastSuccessAt == nil {
+		t.Fatalf("unexpected degraded status: %+v", sourceStatus)
+	}
+
+	otherSiteResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/sites", token, map[string]any{"name": "Other Kubernetes discovery site"})
+	if err != nil || otherSiteResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create reassignment site: status=%v err=%v", otherSiteResp.StatusCode, err)
+	}
+	var otherSite siteResponse
+	s.decodeJSON(t, otherSiteResp, &otherSite)
+	reassignResp, err := s.jsonRequest(t, http.MethodPatch, fmt.Sprintf("/api/v1/subnets/%d/site", subnet.ID), token, map[string]any{"site_id": otherSite.ID})
+	if err != nil || reassignResp.StatusCode != http.StatusOK {
+		t.Fatalf("reassign subnet site: status=%v err=%v", reassignResp.StatusCode, err)
+	}
+	s.closeBody(t, reassignResp)
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list after subnet reassignment: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 0 {
+		t.Fatalf("stale enrichment crossed site scope: %+v", ips[0])
+	}
+	reassignResp, err = s.jsonRequest(t, http.MethodPatch, fmt.Sprintf("/api/v1/subnets/%d/site", subnet.ID), token, map[string]any{"site_id": site.ID})
+	if err != nil || reassignResp.StatusCode != http.StatusOK {
+		t.Fatalf("restore subnet site: status=%v err=%v", reassignResp.StatusCode, err)
+	}
+	s.closeBody(t, reassignResp)
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list after subnet site restoration: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 1 {
+		t.Fatalf("matched enrichment was not retained for rematching: %+v", ips[0])
+	}
+
+	overlapResp, err := s.jsonRequest(t, http.MethodPost, "/api/v1/subnets", token, map[string]any{
+		"cidr": "10.88.0.0/25", "site_id": site.ID, "description": "overlap",
+	})
+	if err != nil || overlapResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create overlapping subnet: status=%v err=%v", overlapResp.StatusCode, err)
+	}
+	var overlap subnetResponse
+	s.decodeJSON(t, overlapResp, &overlap)
+	overlapIPResp, err := s.jsonRequest(t, http.MethodPost, fmt.Sprintf("/api/v1/subnets/%d/ips", overlap.ID), token, map[string]any{"ip": "10.88.0.10", "hostname": "other-manual-name"})
+	if err != nil || overlapIPResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create overlapping ip: status=%v err=%v", overlapIPResp.StatusCode, err)
+	}
+	s.closeBody(t, overlapIPResp)
+
+	result, err = repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{{
+		UID: "service-uid-1", Namespace: "commerce", Name: "orders", Type: "ClusterIP", ResourceVersion: "2",
+		DNSName: "orders.commerce.svc.cluster.test", Addresses: []domain.KubernetesServiceAddress{{Kind: "cluster_ip", Address: netip.MustParseAddr("10.88.0.10")}},
+	}}, observedAt.Add(2*time.Minute))
+	if err != nil || result.Ambiguous != 1 || result.Matched != 0 {
+		t.Fatalf("expected ambiguous site-scoped match, result=%+v err=%v", result, err)
+	}
+	listResp, err = s.get(t, fmt.Sprintf("/api/v1/subnets/%d/ips", subnet.ID), token)
+	if err != nil {
+		t.Fatalf("list ambiguous ip: %v", err)
+	}
+	s.decodeJSON(t, listResp, &ips)
+	if len(ips[0].KubernetesServices) != 0 || ips[0].Hostname != "manual-orders-name" {
+		t.Fatalf("ambiguous observation linked or rewrote manual data: %+v", ips[0])
+	}
+
+	if _, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{}, observedAt.Add(3*time.Minute)); err != nil {
+		t.Fatalf("reconcile complete empty snapshot: %v", err)
+	}
+	var activeServices int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM kubernetes_services WHERE active`).Scan(&activeServices); err != nil {
+		t.Fatalf("count active services: %v", err)
+	}
+	if activeServices != 0 {
+		t.Fatalf("complete empty snapshot left %d active services", activeServices)
+	}
+	if _, err := repository.Reconcile(context.Background(), source, []domain.KubernetesServiceSnapshot{{
+		UID: "service-uid-2", Namespace: "commerce", Name: "orders", Type: "ExternalName", ResourceVersion: "1",
+		ExternalName: "orders.example.test", DNSName: "orders.commerce.svc.cluster.test",
+	}}, observedAt.Add(4*time.Minute)); err != nil {
+		t.Fatalf("reconcile recreated service: %v", err)
+	}
+	var oldActive, newActive bool
+	if err := pool.QueryRow(context.Background(), `
+		SELECT bool_or(active) FILTER (WHERE kubernetes_uid = 'service-uid-1'),
+		       bool_or(active) FILTER (WHERE kubernetes_uid = 'service-uid-2')
+		FROM kubernetes_services`).Scan(&oldActive, &newActive); err != nil {
+		t.Fatalf("read recreated service identities: %v", err)
+	}
+	if oldActive || !newActive {
+		t.Fatalf("UID identity did not distinguish recreation: old=%t new=%t", oldActive, newActive)
+	}
 }
 
 func TestSitesCRUDAndStatistics(t *testing.T) {
@@ -686,6 +913,7 @@ func newIntegrationSuite(ctx context.Context) (*integrationSuite, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s); %s", err, runtimeConfig.Summary(), runtimeConfig.Help())
 	}
+	s.dsn = dsn
 
 	if err = runGooseMigrations(ctx, dsn); err != nil {
 		_ = s.postgres.Terminate(ctx)

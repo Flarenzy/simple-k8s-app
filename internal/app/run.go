@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,18 +16,20 @@ import (
 	sqlcdb "github.com/Flarenzy/simple-k8s-app/internal/db/sqlc"
 	"github.com/Flarenzy/simple-k8s-app/internal/domain"
 	apihttp "github.com/Flarenzy/simple-k8s-app/internal/http"
+	kubediscovery "github.com/Flarenzy/simple-k8s-app/internal/kubernetes"
 )
 
 type Config struct {
-	Port               string
-	DSN                string
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
-	AuthEnabled        bool
-	Issuer             string
-	Audience           string
-	JWKSURL            string
-	CORSAllowedOrigins []string
+	Port                string
+	DSN                 string
+	ReadTimeout         time.Duration
+	WriteTimeout        time.Duration
+	AuthEnabled         bool
+	Issuer              string
+	Audience            string
+	JWKSURL             string
+	CORSAllowedOrigins  []string
+	KubernetesDiscovery kubediscovery.Config
 }
 
 func parseCSV(value string) []string {
@@ -46,26 +47,31 @@ var (
 	serveFn  = Serve
 )
 
-func LoadConfig() Config {
+func LoadConfig() (Config, error) {
+	discoveryConfig, err := kubediscovery.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		return Config{}, fmt.Errorf("load kubernetes discovery config: %w", err)
+	}
 	cfg := Config{
-		DSN:                os.Getenv("DB_CONN"),
-		Port:               os.Getenv("PORT"),
-		ReadTimeout:        3 * time.Second,
-		WriteTimeout:       3 * time.Second,
-		AuthEnabled:        os.Getenv("AUTH_ENABLED") == "true",
-		Issuer:             os.Getenv("KEYCLOAK_ISSUER"),
-		Audience:           os.Getenv("KEYCLOAK_AUDIENCE"),
-		JWKSURL:            os.Getenv("KEYCLOAK_JWKS_URL"),
-		CORSAllowedOrigins: parseCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		DSN:                 os.Getenv("DB_CONN"),
+		Port:                os.Getenv("PORT"),
+		ReadTimeout:         3 * time.Second,
+		WriteTimeout:        3 * time.Second,
+		AuthEnabled:         os.Getenv("AUTH_ENABLED") == "true",
+		Issuer:              os.Getenv("KEYCLOAK_ISSUER"),
+		Audience:            os.Getenv("KEYCLOAK_AUDIENCE"),
+		JWKSURL:             os.Getenv("KEYCLOAK_JWKS_URL"),
+		CORSAllowedOrigins:  parseCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		KubernetesDiscovery: discoveryConfig,
 	}
 
 	if cfg.DSN == "" {
-		log.Fatal("missing required environment variable: DB_CONN")
+		return Config{}, fmt.Errorf("missing required environment variable: DB_CONN")
 	}
 	if cfg.Port == "" {
 		cfg.Port = "4040"
 	}
-	return cfg
+	return cfg, nil
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -97,8 +103,10 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 	subnetRepo := appdb.NewSubnetRepository(queries)
 	ipRepo := appdb.NewIPRepository(queries)
 	sitesRepo := appdb.NewSitesRepository(queries)
-	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkService(subnetRepo, ipRepo, sitesRepo))
+	discoveryRepo := appdb.NewKubernetesDiscoveryRepository(pool)
+	networkService := domain.NewLoggingNetworkService(logger, domain.NewNetworkServiceWithDiscovery(subnetRepo, ipRepo, sitesRepo, discoveryRepo))
 	sitesService := domain.NewSitesService(sitesRepo)
+	discoveryService := domain.NewKubernetesDiscoveryService(discoveryRepo)
 	authenticator, err := newAuthenticator(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("initialize authenticator: %w", err)
@@ -106,6 +114,16 @@ func Serve(ctx context.Context, cfg Config, listener net.Listener) error {
 
 	api := apihttp.NewAPIWithCORS(logger, pool, networkService, sitesService, authenticator, cfg.CORSAllowedOrigins)
 	api.ImportService = domain.NewCSVImportService(sitesService, networkService)
+	api.DiscoveryService = discoveryService
+
+	if cfg.KubernetesDiscovery.Enabled {
+		client, clientErr := kubediscovery.NewClient(cfg.KubernetesDiscovery)
+		if clientErr != nil {
+			return fmt.Errorf("initialize kubernetes discovery client: %w", clientErr)
+		}
+		runner := kubediscovery.NewRunner(cfg.KubernetesDiscovery, client, discoveryService, logger)
+		go runner.Run(ctx)
+	}
 
 	server := &http.Server{
 		Addr:         listener.Addr().String(),

@@ -1,0 +1,69 @@
+{{- if .Values.api.kubernetesDiscovery.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ipam.discoveryServiceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ipam.apiLabels" . | nindent 4 }}
+automountServiceAccountToken: true
+{{- if has "*" .Values.api.kubernetesDiscovery.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ipam.discoveryServiceAccountName" . }}
+  labels:
+    {{- include "ipam.apiLabels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ipam.discoveryServiceAccountName" . }}
+  labels:
+    {{- include "ipam.apiLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "ipam.discoveryServiceAccountName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ipam.discoveryServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- range .Values.api.kubernetesDiscovery.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "ipam.discoveryServiceAccountName" $ }}
+  namespace: {{ . | quote }}
+  labels:
+    {{- include "ipam.apiLabels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "ipam.discoveryServiceAccountName" $ }}
+  namespace: {{ . | quote }}
+  labels:
+    {{- include "ipam.apiLabels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "ipam.discoveryServiceAccountName" $ }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ipam.discoveryServiceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}

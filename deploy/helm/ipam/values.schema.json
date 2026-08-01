@@ -128,6 +128,25 @@
             }
           }
         },
+        "kubernetesDiscovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "sourceKey": { "type": "string" },
+            "sourceName": { "type": "string" },
+            "siteID": { "type": "string" },
+            "namespaces": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "clusterDomain": { "type": "string", "minLength": 1 },
+            "interval": { "type": "string", "minLength": 1 },
+            "requestTimeout": { "type": "string", "minLength": 1 },
+            "staleRetention": { "type": "string", "minLength": 1 }
+          }
+        },
         "livenessProbe": {
           "$ref": "#/definitions/probeConfig"
         },
@@ -173,6 +192,29 @@
                   "audience": {
                     "minLength": 1
                   }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kubernetesDiscovery": {
+                "type": "object",
+                "properties": { "enabled": { "const": true } },
+                "required": ["enabled"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kubernetesDiscovery": {
+                "required": ["sourceKey", "siteID", "namespaces"],
+                "properties": {
+                  "sourceKey": { "minLength": 1 },
+                  "siteID": { "minLength": 1 },
+                  "namespaces": { "minItems": 1 }
                 }
               }
             }
