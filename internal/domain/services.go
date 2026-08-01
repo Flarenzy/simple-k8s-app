@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -31,4 +32,10 @@ type SitesService interface {
 	Update(ctx context.Context, input UpdateSiteInput) (Site, error)
 	Delete(ctx context.Context, id uuid.UUID) (bool, error)
 	Statistics(ctx context.Context) ([]SiteStatistics, error)
+}
+
+type KubernetesDiscoveryService interface {
+	Reconcile(ctx context.Context, source KubernetesSourceConfig, services []KubernetesServiceSnapshot, observedAt time.Time) (KubernetesReconcileResult, error)
+	RecordFailure(ctx context.Context, source KubernetesSourceConfig, attemptedAt time.Time, err error) error
+	ListSourceStatuses(ctx context.Context) ([]KubernetesSourceStatus, error)
 }

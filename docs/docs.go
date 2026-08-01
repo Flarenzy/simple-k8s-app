@@ -24,6 +24,87 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/import/csv": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "import"
+                ],
+                "summary": "Import sites, subnets, and IP metadata",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "CSV file with site,cidr,ip,description columns",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.ImportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/kubernetes/sources": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kubernetes"
+                ],
+                "summary": "List Kubernetes discovery source status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/http.KubernetesDiscoveryStatusResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/sites": {
             "get": {
                 "security": [
@@ -770,6 +851,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/subnets/{id}/site": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subnets"
+                ],
+                "summary": "Assign subnet to site",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Subnet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Site assignment",
+                        "name": "site",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.AssignSubnetSiteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.SubnetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "tags": [
@@ -810,6 +954,14 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "http.AssignSubnetSiteRequest": {
+            "type": "object",
+            "properties": {
+                "site_id": {
+                    "type": "string"
+                }
+            }
+        },
         "http.CreateIPRequest": {
             "type": "object",
             "properties": {
@@ -871,6 +1023,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "10.0.0.1"
                 },
+                "kubernetes_services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesServiceResponse"
+                    }
+                },
                 "subnet_id": {
                     "type": "integer",
                     "example": 4
@@ -878,6 +1036,184 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2024-05-10T15:04:05Z"
+                }
+            }
+        },
+        "http.ImportResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.RowError"
+                    }
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
+        "http.KubernetesDiscoveryStatusResponse": {
+            "type": "object",
+            "properties": {
+                "ambiguous": {
+                    "type": "integer"
+                },
+                "cluster_domain": {
+                    "type": "string"
+                },
+                "last_attempt_at": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_success_at": {
+                    "type": "string"
+                },
+                "matched": {
+                    "type": "integer"
+                },
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "services": {
+                    "type": "integer"
+                },
+                "site_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/http.KubernetesSourceResponse"
+                },
+                "state": {
+                    "type": "string",
+                    "example": "healthy"
+                },
+                "unmatched": {
+                    "type": "integer"
+                }
+            }
+        },
+        "http.KubernetesMatchedAddressResponse": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string",
+                    "example": "10.96.12.4"
+                },
+                "kind": {
+                    "type": "string",
+                    "example": "cluster_ip"
+                }
+            }
+        },
+        "http.KubernetesServicePortResponse": {
+            "type": "object",
+            "properties": {
+                "app_protocol": {
+                    "type": "string",
+                    "example": "https"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "https"
+                },
+                "node_port": {
+                    "type": "integer",
+                    "example": 30443
+                },
+                "port": {
+                    "type": "integer",
+                    "example": 443
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "TCP"
+                },
+                "target_port": {
+                    "type": "string",
+                    "example": "8443"
+                }
+            }
+        },
+        "http.KubernetesServiceResponse": {
+            "type": "object",
+            "properties": {
+                "dns_name": {
+                    "type": "string",
+                    "example": "orders.commerce.svc.cluster.local"
+                },
+                "matched_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesMatchedAddressResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "orders"
+                },
+                "namespace": {
+                    "type": "string",
+                    "example": "commerce"
+                },
+                "observed_at": {
+                    "type": "string",
+                    "example": "2026-08-01T10:00:00Z"
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.KubernetesServicePortResponse"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/http.KubernetesSourceResponse"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "LoadBalancer"
+                },
+                "uid": {
+                    "type": "string",
+                    "example": "02e12c93-1234-5678-90ab-abcdefabcdef"
+                }
+            }
+        },
+        "http.KubernetesSourceResponse": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "prod-cluster"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Production"
+                }
+            }
+        },
+        "http.RowError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "row": {
+                    "type": "integer"
                 }
             }
         },
@@ -906,14 +1242,26 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "free_ips": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
+                "subnet_count": {
+                    "type": "integer"
+                },
+                "total_ips": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
+                },
+                "used_ips": {
+                    "type": "integer"
                 }
             }
         },
@@ -929,6 +1277,9 @@ const docTemplate = `{
                 "free_ip_count": {
                     "type": "integer"
                 },
+                "free_ips": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -941,10 +1292,16 @@ const docTemplate = `{
                 "total_ip_count": {
                     "type": "integer"
                 },
+                "total_ips": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
                 },
                 "used_ip_count": {
+                    "type": "integer"
+                },
+                "used_ips": {
                     "type": "integer"
                 }
             }
@@ -972,9 +1329,15 @@ const docTemplate = `{
                     "type": "string",
                     "example": "50e8400-e29b-41d4-a716-446655440000"
                 },
+                "total_ips": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string",
                     "example": "2024-05-10T15:04:05Z"
+                },
+                "used_ips": {
+                    "type": "integer"
                 }
             }
         },

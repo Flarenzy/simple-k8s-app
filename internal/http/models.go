@@ -75,12 +75,59 @@ type RowError struct {
 
 // IPResponse is a simplified view returned to clients and used in Swagger.
 type IPResponse struct {
-	ID        string    `json:"id" example:"50e8400-e29b-41d4-a716-446655440000"`
-	IP        string    `json:"ip" example:"10.0.0.1"`
-	Hostname  string    `json:"hostname" example:"printer-1"`
-	SubnetID  int64     `json:"subnet_id" example:"4"`
-	CreatedAt time.Time `json:"created_at" example:"2024-05-10T15:04:05Z"`
-	UpdatedAt time.Time `json:"updated_at" example:"2024-05-10T15:04:05Z"`
+	ID                 string                      `json:"id" example:"50e8400-e29b-41d4-a716-446655440000"`
+	IP                 string                      `json:"ip" example:"10.0.0.1"`
+	Hostname           string                      `json:"hostname" example:"printer-1"`
+	SubnetID           int64                       `json:"subnet_id" example:"4"`
+	CreatedAt          time.Time                   `json:"created_at" example:"2024-05-10T15:04:05Z"`
+	UpdatedAt          time.Time                   `json:"updated_at" example:"2024-05-10T15:04:05Z"`
+	KubernetesServices []KubernetesServiceResponse `json:"kubernetes_services"`
+}
+
+type KubernetesSourceResponse struct {
+	Key  string `json:"key" example:"prod-cluster"`
+	Name string `json:"name" example:"Production"`
+}
+
+type KubernetesMatchedAddressResponse struct {
+	IP   string `json:"ip" example:"10.96.12.4"`
+	Kind string `json:"kind" example:"cluster_ip"`
+}
+
+type KubernetesServicePortResponse struct {
+	Name        string `json:"name" example:"https"`
+	Protocol    string `json:"protocol" example:"TCP"`
+	Port        int32  `json:"port" example:"443"`
+	TargetPort  string `json:"target_port" example:"8443"`
+	AppProtocol string `json:"app_protocol,omitempty" example:"https"`
+	NodePort    *int32 `json:"node_port,omitempty" example:"30443"`
+}
+
+type KubernetesServiceResponse struct {
+	Source           KubernetesSourceResponse           `json:"source"`
+	UID              string                             `json:"uid" example:"02e12c93-1234-5678-90ab-abcdefabcdef"`
+	Name             string                             `json:"name" example:"orders"`
+	Namespace        string                             `json:"namespace" example:"commerce"`
+	Type             string                             `json:"type" example:"LoadBalancer"`
+	DNSName          string                             `json:"dns_name" example:"orders.commerce.svc.cluster.local"`
+	MatchedAddresses []KubernetesMatchedAddressResponse `json:"matched_addresses"`
+	Ports            []KubernetesServicePortResponse    `json:"ports"`
+	ObservedAt       time.Time                          `json:"observed_at" example:"2026-08-01T10:00:00Z"`
+}
+
+type KubernetesDiscoveryStatusResponse struct {
+	Source        KubernetesSourceResponse `json:"source"`
+	SiteID        uuid.UUID                `json:"site_id"`
+	ClusterDomain string                   `json:"cluster_domain"`
+	Namespaces    []string                 `json:"namespaces"`
+	State         string                   `json:"state" example:"healthy"`
+	LastAttemptAt *time.Time               `json:"last_attempt_at"`
+	LastSuccessAt *time.Time               `json:"last_success_at"`
+	LastError     string                   `json:"last_error"`
+	Services      int                      `json:"services"`
+	Matched       int                      `json:"matched"`
+	Unmatched     int                      `json:"unmatched"`
+	Ambiguous     int                      `json:"ambiguous"`
 }
 
 // CreateIPRequest is the payload accepted when creating a ip.
@@ -120,14 +167,19 @@ func subnetsToResponse(subnets []domain.Subnet) []SubnetResponse {
 }
 
 func ipToResponse(i domain.IPAddress) IPResponse {
-	return IPResponse{
-		ID:        string(i.ID),
-		IP:        i.IP.String(),
-		Hostname:  i.Hostname,
-		SubnetID:  i.SubnetID,
-		CreatedAt: i.CreatedAt,
-		UpdatedAt: i.UpdatedAt,
+	response := IPResponse{
+		ID:                 string(i.ID),
+		IP:                 i.IP.String(),
+		Hostname:           i.Hostname,
+		SubnetID:           i.SubnetID,
+		CreatedAt:          i.CreatedAt,
+		UpdatedAt:          i.UpdatedAt,
+		KubernetesServices: make([]KubernetesServiceResponse, 0, len(i.KubernetesServices)),
 	}
+	for _, service := range i.KubernetesServices {
+		response.KubernetesServices = append(response.KubernetesServices, kubernetesServiceToResponse(service))
+	}
+	return response
 }
 
 func ipsToResponse(ips []domain.IPAddress) []IPResponse {
@@ -136,6 +188,40 @@ func ipsToResponse(ips []domain.IPAddress) []IPResponse {
 		out = append(out, ipToResponse(ip))
 	}
 	return out
+}
+
+func kubernetesServiceToResponse(service domain.KubernetesServiceEnrichment) KubernetesServiceResponse {
+	response := KubernetesServiceResponse{
+		Source: KubernetesSourceResponse{Key: service.Source.Key, Name: service.Source.Name},
+		UID:    service.UID, Name: service.Name, Namespace: service.Namespace, Type: service.Type,
+		DNSName: service.DNSName, ObservedAt: service.ObservedAt,
+		MatchedAddresses: make([]KubernetesMatchedAddressResponse, 0, len(service.MatchedAddresses)),
+		Ports:            make([]KubernetesServicePortResponse, 0, len(service.Ports)),
+	}
+	for _, address := range service.MatchedAddresses {
+		response.MatchedAddresses = append(response.MatchedAddresses, KubernetesMatchedAddressResponse{IP: address.IP.String(), Kind: address.Kind})
+	}
+	for _, port := range service.Ports {
+		response.Ports = append(response.Ports, KubernetesServicePortResponse{
+			Name: port.Name, Protocol: port.Protocol, Port: port.Port, TargetPort: port.TargetPort,
+			AppProtocol: port.AppProtocol, NodePort: port.NodePort,
+		})
+	}
+	return response
+}
+
+func kubernetesStatusesToResponse(statuses []domain.KubernetesSourceStatus) []KubernetesDiscoveryStatusResponse {
+	responses := make([]KubernetesDiscoveryStatusResponse, 0, len(statuses))
+	for _, status := range statuses {
+		responses = append(responses, KubernetesDiscoveryStatusResponse{
+			Source: KubernetesSourceResponse{Key: status.Source.Key, Name: status.Source.Name},
+			SiteID: status.SiteID, ClusterDomain: status.ClusterDomain,
+			Namespaces: append([]string(nil), status.Namespaces...), State: status.State,
+			LastAttemptAt: status.LastAttemptAt, LastSuccessAt: status.LastSuccessAt, LastError: status.LastError,
+			Services: status.Services, Matched: status.Matched, Unmatched: status.Unmatched, Ambiguous: status.Ambiguous,
+		})
+	}
+	return responses
 }
 
 func (r CreateSubnetRequest) toInput() domain.CreateSubnetInput {

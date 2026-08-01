@@ -38,9 +38,12 @@ func main() {
 	docs.SwaggerInfo.BasePath = "/"
 	docs.SwaggerInfo.Schemes = []string{"http"}
 
-	cfg := api.LoadConfig()
+	cfg, err := api.LoadConfig()
+	if err != nil {
+		log.Fatalf("load configuration: %v", err)
+	}
 
-	if err := api.Run(ctx, cfg); err != nil {
+	if err = api.Run(ctx, cfg); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
 }

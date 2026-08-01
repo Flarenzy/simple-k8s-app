@@ -46,7 +46,10 @@ func TestLoadConfigUsesDefaultPortAndReadsAuthSettings(t *testing.T) {
 	t.Setenv("KEYCLOAK_AUDIENCE", "ipam-api")
 	t.Setenv("KEYCLOAK_JWKS_URL", "https://issuer.example/jwks")
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
 
 	if cfg.Port != "4040" {
 		t.Fatalf("expected default port 4040, got %q", cfg.Port)
@@ -63,7 +66,10 @@ func TestLoadConfigHonorsExplicitPort(t *testing.T) {
 	t.Setenv("DB_CONN", "postgres://user:pass@localhost:5432/db?sslmode=disable")
 	t.Setenv("PORT", "9090")
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
 
 	if cfg.Port != "9090" {
 		t.Fatalf("expected explicit port, got %q", cfg.Port)

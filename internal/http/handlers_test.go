@@ -537,6 +537,7 @@ func TestGetIPsBySubnetIDReturnsJSONPayload(t *testing.T) {
 	now := time.Unix(1700000000, 0).UTC()
 	api := newHandlerTestAPI(stubService{
 		listIPsFn: func(context.Context, int64) ([]domain.IPAddress, error) {
+			nodePort := int32(30443)
 			return []domain.IPAddress{
 				{
 					ID:        domain.IPAddressID("550e8400-e29b-41d4-a716-446655440000"),
@@ -545,6 +546,13 @@ func TestGetIPsBySubnetIDReturnsJSONPayload(t *testing.T) {
 					SubnetID:  42,
 					CreatedAt: now,
 					UpdatedAt: now,
+					KubernetesServices: []domain.KubernetesServiceEnrichment{{
+						Source: domain.KubernetesSource{Key: "prod", Name: "Production"}, UID: "uid-1",
+						Name: "orders", Namespace: "commerce", Type: "LoadBalancer",
+						DNSName: "orders.commerce.svc.cluster.local", ObservedAt: now,
+						MatchedAddresses: []domain.KubernetesMatchedAddress{{IP: mustAddr(t, "10.0.0.10"), Kind: "cluster_ip"}},
+						Ports:            []domain.KubernetesServicePort{{Name: "https", Protocol: "TCP", Port: 443, TargetPort: "8443", NodePort: &nodePort}},
+					}},
 				},
 			}, nil
 		},
@@ -568,6 +576,19 @@ func TestGetIPsBySubnetIDReturnsJSONPayload(t *testing.T) {
 	}
 	if resp[0].IP != "10.0.0.10" || resp[0].Hostname != "printer-1" || resp[0].SubnetID != 42 {
 		t.Fatalf("unexpected ip payload: %+v", resp[0])
+	}
+	if len(resp[0].KubernetesServices) != 1 || len(resp[0].KubernetesServices[0].MatchedAddresses) != 1 || len(resp[0].KubernetesServices[0].Ports) != 1 {
+		t.Fatalf("unexpected kubernetes enrichment: %+v", resp[0].KubernetesServices)
+	}
+}
+
+func TestIPResponseAlwaysIncludesKubernetesServicesArray(t *testing.T) {
+	payload, err := json.Marshal(ipToResponse(domain.IPAddress{}))
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	if !strings.Contains(string(payload), `"kubernetes_services":[]`) {
+		t.Fatalf("expected non-null additive array, got %s", payload)
 	}
 }
 
