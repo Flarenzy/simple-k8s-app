@@ -1,6 +1,6 @@
 # Repository Guide
 
-This repository contains IPAM, a small network inventory application. The Go backend exposes a JSON HTTP API for subnets and IP addresses, persists data in PostgreSQL through SQLC-generated queries, and optionally authenticates requests with Keycloak. The React/Vite frontend consumes the API and provides the browser UI for subnet and IP management. Sites are represented in the database, repository, domain service, and application wiring; site API and UI integration is part of the current feature work.
+This repository contains IPAM, a small network inventory application. The Go backend exposes a JSON HTTP API for subnets and IP addresses, persists data in PostgreSQL through SQLC-generated queries, and optionally authenticates requests with Keycloak. The React/Vite frontend consumes the API and provides the browser UI for subnet, IP, and site management. Sites are represented in the database, repository, domain service, and application wiring.
 
 ## Working with the code
 
