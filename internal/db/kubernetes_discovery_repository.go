@@ -62,6 +62,9 @@ func (r *KubernetesDiscoveryRepository) Reconcile(ctx context.Context, source do
 			return result, upsertErr
 		}
 		uids = append(uids, snapshot.UID)
+		if len(snapshot.Addresses) == 0 {
+			result.NoUsableIP++
+		}
 
 		if err = replaceKubernetesServicePorts(ctx, queries, serviceRow.ID, snapshot.Ports); err != nil {
 			return result, err
@@ -88,12 +91,13 @@ func (r *KubernetesDiscoveryRepository) Reconcile(ctx context.Context, source do
 		return result, err
 	}
 	if err = queries.RecordKubernetesSourceSuccess(ctx, sqlc.RecordKubernetesSourceSuccessParams{
-		ID:             sourceRow.ID,
-		LastAttemptAt:  timestamp(observedAt),
-		ServiceCount:   int32(result.Services),
-		MatchedCount:   int32(result.Matched),
-		UnmatchedCount: int32(result.Unmatched),
-		AmbiguousCount: int32(result.Ambiguous),
+		ID:              sourceRow.ID,
+		LastAttemptAt:   timestamp(observedAt),
+		ServiceCount:    int32(result.Services),
+		MatchedCount:    int32(result.Matched),
+		UnmatchedCount:  int32(result.Unmatched),
+		AmbiguousCount:  int32(result.Ambiguous),
+		NoUsableIpCount: int32(result.NoUsableIP),
 	}); err != nil {
 		return result, err
 	}
@@ -158,6 +162,7 @@ func (r *KubernetesDiscoveryRepository) ListSourceStatuses(ctx context.Context) 
 			Matched:       int(row.MatchedCount),
 			Unmatched:     int(row.UnmatchedCount),
 			Ambiguous:     int(row.AmbiguousCount),
+			NoUsableIP:    int(row.NoUsableIpCount),
 		})
 	}
 	return statuses, nil
@@ -212,6 +217,98 @@ func (r *KubernetesDiscoveryRepository) ListServicesBySubnetID(ctx context.Conte
 		}
 	}
 	return result, nil
+}
+
+func (r *KubernetesDiscoveryRepository) ListAllServicesBySubnetID(ctx context.Context, subnetID int64) ([]domain.KubernetesServiceObservation, error) {
+	serviceRows, err := r.queries.ListActiveKubernetesServicesBySubnet(ctx, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	services := make([]domain.KubernetesServiceObservation, 0, len(serviceRows))
+	indexes := make(map[uuid.UUID]int, len(serviceRows))
+	for _, row := range serviceRows {
+		serviceID := uuid.UUID(row.ServiceID.Bytes)
+		indexes[serviceID] = len(services)
+		services = append(services, domain.KubernetesServiceObservation{
+			Source:       domain.KubernetesSource{Key: row.SourceKey, Name: row.SourceName},
+			UID:          row.KubernetesUid,
+			Name:         row.Name,
+			Namespace:    row.Namespace,
+			Type:         row.ServiceType,
+			ExternalName: row.ExternalName,
+			DNSName:      row.DnsName,
+			Addresses:    make([]domain.KubernetesAddressObservation, 0),
+			Hostnames:    make([]domain.KubernetesServiceHostname, 0),
+			Ports:        make([]domain.KubernetesServicePort, 0),
+			ObservedAt:   row.ObservedAt.Time,
+		})
+	}
+
+	addressRows, err := r.queries.ListKubernetesServiceAddressesBySubnet(ctx, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range addressRows {
+		index, ok := indexes[uuid.UUID(row.ServiceID.Bytes)]
+		if !ok {
+			continue
+		}
+		address := domain.KubernetesAddressObservation{
+			IP:          row.Address,
+			Kind:        row.Kind,
+			IPMode:      row.IpMode,
+			MatchStatus: domain.KubernetesMatchStatus(row.MatchStatus),
+			MatchCount:  int(row.MatchCount),
+		}
+		if row.IpAddressID.Valid {
+			id := domain.IPAddressID(uuid.UUID(row.IpAddressID.Bytes).String())
+			address.MatchedIPAddressID = &id
+			if row.MatchedSubnetID.Valid {
+				subnetID := row.MatchedSubnetID.Int64
+				address.MatchedSubnetID = &subnetID
+			}
+		}
+		services[index].Addresses = append(services[index].Addresses, address)
+	}
+
+	portRows, err := r.queries.ListKubernetesServicePortsBySubnet(ctx, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range portRows {
+		index, ok := indexes[uuid.UUID(row.ServiceID.Bytes)]
+		if !ok {
+			continue
+		}
+		port := domain.KubernetesServicePort{
+			Name: row.Name, Protocol: row.Protocol, Port: row.Port,
+			TargetPort: row.TargetPort, AppProtocol: row.AppProtocol,
+		}
+		if row.NodePort.Valid {
+			nodePort := row.NodePort.Int32
+			port.NodePort = &nodePort
+		}
+		services[index].Ports = append(services[index].Ports, port)
+	}
+
+	hostnameRows, err := r.queries.ListKubernetesServiceHostnamesBySubnet(ctx, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range hostnameRows {
+		index, ok := indexes[uuid.UUID(row.ServiceID.Bytes)]
+		if !ok {
+			continue
+		}
+		services[index].Hostnames = append(services[index].Hostnames, domain.KubernetesServiceHostname{
+			Kind: row.Kind, Hostname: row.Hostname,
+		})
+	}
+
+	for i := range services {
+		services[i].MatchStatus = kubernetesServiceMatchStatus(services[i].Addresses)
+	}
+	return services, nil
 }
 
 func upsertKubernetesSource(ctx context.Context, queries *sqlc.Queries, source domain.KubernetesSourceConfig) (sqlc.KubernetesSource, error) {
@@ -331,6 +428,22 @@ func equalOptionalInt32(left, right *int32) bool {
 		return left == right
 	}
 	return *left == *right
+}
+
+func kubernetesServiceMatchStatus(addresses []domain.KubernetesAddressObservation) domain.KubernetesMatchStatus {
+	if len(addresses) == 0 {
+		return domain.KubernetesMatchNoUsableIP
+	}
+	status := domain.KubernetesMatchUnmatched
+	for _, address := range addresses {
+		if address.MatchStatus == domain.KubernetesMatchMatched {
+			return domain.KubernetesMatchMatched
+		}
+		if address.MatchStatus == domain.KubernetesMatchAmbiguous {
+			status = domain.KubernetesMatchAmbiguous
+		}
+	}
+	return status
 }
 
 var _ domain.KubernetesDiscoveryRepository = (*KubernetesDiscoveryRepository)(nil)

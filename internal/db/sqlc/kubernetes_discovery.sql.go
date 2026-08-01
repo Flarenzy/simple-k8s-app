@@ -188,7 +188,7 @@ func (q *Queries) FindIPCandidatesBySiteAndAddress(ctx context.Context, arg Find
 }
 
 const getKubernetesSourceByKey = `-- name: GetKubernetesSourceByKey :one
-SELECT id, source_key, name, site_id, cluster_domain, namespace_scope, last_attempt_at, last_success_at, last_error, service_count, matched_count, unmatched_count, ambiguous_count, created_at, updated_at FROM kubernetes_sources WHERE source_key = $1
+SELECT id, source_key, name, site_id, cluster_domain, namespace_scope, last_attempt_at, last_success_at, last_error, service_count, matched_count, unmatched_count, ambiguous_count, created_at, updated_at, no_usable_ip_count FROM kubernetes_sources WHERE source_key = $1
 `
 
 func (q *Queries) GetKubernetesSourceByKey(ctx context.Context, sourceKey string) (KubernetesSource, error) {
@@ -210,31 +210,258 @@ func (q *Queries) GetKubernetesSourceByKey(ctx context.Context, sourceKey string
 		&i.AmbiguousCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NoUsableIpCount,
 	)
 	return i, err
+}
+
+const listActiveKubernetesServicesBySubnet = `-- name: ListActiveKubernetesServicesBySubnet :many
+SELECT svc.id AS service_id,
+       src.source_key,
+       src.name AS source_name,
+       svc.kubernetes_uid,
+       svc.name,
+       svc.namespace,
+       svc.service_type,
+       svc.external_name,
+       svc.dns_name,
+       svc.observed_at
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id
+WHERE subnet.id = $1
+  AND svc.active = true
+ORDER BY src.source_key, svc.namespace, svc.name, svc.kubernetes_uid
+`
+
+type ListActiveKubernetesServicesBySubnetRow struct {
+	ServiceID     pgtype.UUID        `json:"service_id"`
+	SourceKey     string             `json:"source_key"`
+	SourceName    string             `json:"source_name"`
+	KubernetesUid string             `json:"kubernetes_uid"`
+	Name          string             `json:"name"`
+	Namespace     string             `json:"namespace"`
+	ServiceType   string             `json:"service_type"`
+	ExternalName  string             `json:"external_name"`
+	DnsName       string             `json:"dns_name"`
+	ObservedAt    pgtype.Timestamptz `json:"observed_at"`
+}
+
+func (q *Queries) ListActiveKubernetesServicesBySubnet(ctx context.Context, id int64) ([]ListActiveKubernetesServicesBySubnetRow, error) {
+	rows, err := q.db.Query(ctx, listActiveKubernetesServicesBySubnet, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveKubernetesServicesBySubnetRow
+	for rows.Next() {
+		var i ListActiveKubernetesServicesBySubnetRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.SourceKey,
+			&i.SourceName,
+			&i.KubernetesUid,
+			&i.Name,
+			&i.Namespace,
+			&i.ServiceType,
+			&i.ExternalName,
+			&i.DnsName,
+			&i.ObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listKubernetesServiceAddressesBySubnet = `-- name: ListKubernetesServiceAddressesBySubnet :many
+SELECT a.service_id,
+       a.address,
+       a.kind,
+       COALESCE(a.ip_mode, '') AS ip_mode,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NULL THEN 'unmatched'
+           ELSE a.match_status
+       END::text AS match_status,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NULL THEN 0
+           ELSE a.match_count
+       END::integer AS match_count,
+       CASE
+           WHEN a.match_status = 'matched' AND matched_subnet.id IS NOT NULL THEN a.ip_address_id
+           ELSE NULL
+       END::uuid AS ip_address_id,
+       matched_subnet.id AS matched_subnet_id
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_addresses a ON a.service_id = svc.id
+LEFT JOIN ip_addresses matched_ip ON matched_ip.id = a.ip_address_id
+LEFT JOIN subnets matched_subnet ON matched_subnet.id = matched_ip.subnet_id
+                                AND matched_subnet.site_id = src.site_id
+WHERE subnet.id = $1
+ORDER BY svc.id, a.kind, a.address
+`
+
+type ListKubernetesServiceAddressesBySubnetRow struct {
+	ServiceID       pgtype.UUID `json:"service_id"`
+	Address         netip.Addr  `json:"address"`
+	Kind            string      `json:"kind"`
+	IpMode          string      `json:"ip_mode"`
+	MatchStatus     string      `json:"match_status"`
+	MatchCount      int32       `json:"match_count"`
+	IpAddressID     pgtype.UUID `json:"ip_address_id"`
+	MatchedSubnetID pgtype.Int8 `json:"matched_subnet_id"`
+}
+
+func (q *Queries) ListKubernetesServiceAddressesBySubnet(ctx context.Context, id int64) ([]ListKubernetesServiceAddressesBySubnetRow, error) {
+	rows, err := q.db.Query(ctx, listKubernetesServiceAddressesBySubnet, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListKubernetesServiceAddressesBySubnetRow
+	for rows.Next() {
+		var i ListKubernetesServiceAddressesBySubnetRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.Address,
+			&i.Kind,
+			&i.IpMode,
+			&i.MatchStatus,
+			&i.MatchCount,
+			&i.IpAddressID,
+			&i.MatchedSubnetID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listKubernetesServiceHostnamesBySubnet = `-- name: ListKubernetesServiceHostnamesBySubnet :many
+SELECT hostname.service_id,
+       hostname.kind,
+       hostname.hostname
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_hostnames hostname ON hostname.service_id = svc.id
+WHERE subnet.id = $1
+ORDER BY svc.id, hostname.kind, hostname.hostname
+`
+
+type ListKubernetesServiceHostnamesBySubnetRow struct {
+	ServiceID pgtype.UUID `json:"service_id"`
+	Kind      string      `json:"kind"`
+	Hostname  string      `json:"hostname"`
+}
+
+func (q *Queries) ListKubernetesServiceHostnamesBySubnet(ctx context.Context, id int64) ([]ListKubernetesServiceHostnamesBySubnetRow, error) {
+	rows, err := q.db.Query(ctx, listKubernetesServiceHostnamesBySubnet, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListKubernetesServiceHostnamesBySubnetRow
+	for rows.Next() {
+		var i ListKubernetesServiceHostnamesBySubnetRow
+		if err := rows.Scan(&i.ServiceID, &i.Kind, &i.Hostname); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listKubernetesServicePortsBySubnet = `-- name: ListKubernetesServicePortsBySubnet :many
+SELECT port.service_id,
+       COALESCE(port.name, '') AS name,
+       port.protocol,
+       port.port,
+       port.target_port,
+       COALESCE(port.app_protocol, '') AS app_protocol,
+       port.node_port
+FROM subnets subnet
+JOIN kubernetes_sources src ON src.site_id = subnet.site_id
+JOIN kubernetes_services svc ON svc.source_id = src.id AND svc.active = true
+JOIN kubernetes_service_ports port ON port.service_id = svc.id
+WHERE subnet.id = $1
+ORDER BY svc.id, port.port, port.protocol, port.name
+`
+
+type ListKubernetesServicePortsBySubnetRow struct {
+	ServiceID   pgtype.UUID `json:"service_id"`
+	Name        string      `json:"name"`
+	Protocol    string      `json:"protocol"`
+	Port        int32       `json:"port"`
+	TargetPort  string      `json:"target_port"`
+	AppProtocol string      `json:"app_protocol"`
+	NodePort    pgtype.Int4 `json:"node_port"`
+}
+
+func (q *Queries) ListKubernetesServicePortsBySubnet(ctx context.Context, id int64) ([]ListKubernetesServicePortsBySubnetRow, error) {
+	rows, err := q.db.Query(ctx, listKubernetesServicePortsBySubnet, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListKubernetesServicePortsBySubnetRow
+	for rows.Next() {
+		var i ListKubernetesServicePortsBySubnetRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.Name,
+			&i.Protocol,
+			&i.Port,
+			&i.TargetPort,
+			&i.AppProtocol,
+			&i.NodePort,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listKubernetesSourceStatuses = `-- name: ListKubernetesSourceStatuses :many
 SELECT source_key, name, site_id, cluster_domain, namespace_scope,
        last_attempt_at, last_success_at, last_error,
-       service_count, matched_count, unmatched_count, ambiguous_count
+       service_count, matched_count, unmatched_count, ambiguous_count,
+       no_usable_ip_count
 FROM kubernetes_sources
 ORDER BY source_key
 `
 
 type ListKubernetesSourceStatusesRow struct {
-	SourceKey      string             `json:"source_key"`
-	Name           string             `json:"name"`
-	SiteID         pgtype.UUID        `json:"site_id"`
-	ClusterDomain  string             `json:"cluster_domain"`
-	NamespaceScope []string           `json:"namespace_scope"`
-	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
-	LastSuccessAt  pgtype.Timestamptz `json:"last_success_at"`
-	LastError      string             `json:"last_error"`
-	ServiceCount   int32              `json:"service_count"`
-	MatchedCount   int32              `json:"matched_count"`
-	UnmatchedCount int32              `json:"unmatched_count"`
-	AmbiguousCount int32              `json:"ambiguous_count"`
+	SourceKey       string             `json:"source_key"`
+	Name            string             `json:"name"`
+	SiteID          pgtype.UUID        `json:"site_id"`
+	ClusterDomain   string             `json:"cluster_domain"`
+	NamespaceScope  []string           `json:"namespace_scope"`
+	LastAttemptAt   pgtype.Timestamptz `json:"last_attempt_at"`
+	LastSuccessAt   pgtype.Timestamptz `json:"last_success_at"`
+	LastError       string             `json:"last_error"`
+	ServiceCount    int32              `json:"service_count"`
+	MatchedCount    int32              `json:"matched_count"`
+	UnmatchedCount  int32              `json:"unmatched_count"`
+	AmbiguousCount  int32              `json:"ambiguous_count"`
+	NoUsableIpCount int32              `json:"no_usable_ip_count"`
 }
 
 func (q *Queries) ListKubernetesSourceStatuses(ctx context.Context) ([]ListKubernetesSourceStatusesRow, error) {
@@ -259,6 +486,7 @@ func (q *Queries) ListKubernetesSourceStatuses(ctx context.Context) ([]ListKuber
 			&i.MatchedCount,
 			&i.UnmatchedCount,
 			&i.AmbiguousCount,
+			&i.NoUsableIpCount,
 		); err != nil {
 			return nil, err
 		}
@@ -405,17 +633,19 @@ SET last_attempt_at = $2,
     matched_count = $4,
     unmatched_count = $5,
     ambiguous_count = $6,
+    no_usable_ip_count = $7,
     updated_at = now()
 WHERE id = $1
 `
 
 type RecordKubernetesSourceSuccessParams struct {
-	ID             pgtype.UUID        `json:"id"`
-	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
-	ServiceCount   int32              `json:"service_count"`
-	MatchedCount   int32              `json:"matched_count"`
-	UnmatchedCount int32              `json:"unmatched_count"`
-	AmbiguousCount int32              `json:"ambiguous_count"`
+	ID              pgtype.UUID        `json:"id"`
+	LastAttemptAt   pgtype.Timestamptz `json:"last_attempt_at"`
+	ServiceCount    int32              `json:"service_count"`
+	MatchedCount    int32              `json:"matched_count"`
+	UnmatchedCount  int32              `json:"unmatched_count"`
+	AmbiguousCount  int32              `json:"ambiguous_count"`
+	NoUsableIpCount int32              `json:"no_usable_ip_count"`
 }
 
 func (q *Queries) RecordKubernetesSourceSuccess(ctx context.Context, arg RecordKubernetesSourceSuccessParams) error {
@@ -426,6 +656,7 @@ func (q *Queries) RecordKubernetesSourceSuccess(ctx context.Context, arg RecordK
 		arg.MatchedCount,
 		arg.UnmatchedCount,
 		arg.AmbiguousCount,
+		arg.NoUsableIpCount,
 	)
 	return err
 }
@@ -514,7 +745,7 @@ ON CONFLICT (source_key) DO UPDATE SET
     cluster_domain = EXCLUDED.cluster_domain,
     namespace_scope = EXCLUDED.namespace_scope,
     updated_at = now()
-RETURNING id, source_key, name, site_id, cluster_domain, namespace_scope, last_attempt_at, last_success_at, last_error, service_count, matched_count, unmatched_count, ambiguous_count, created_at, updated_at
+RETURNING id, source_key, name, site_id, cluster_domain, namespace_scope, last_attempt_at, last_success_at, last_error, service_count, matched_count, unmatched_count, ambiguous_count, created_at, updated_at, no_usable_ip_count
 `
 
 type UpsertKubernetesSourceParams struct {
@@ -550,6 +781,7 @@ func (q *Queries) UpsertKubernetesSource(ctx context.Context, arg UpsertKubernet
 		&i.AmbiguousCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.NoUsableIpCount,
 	)
 	return i, err
 }

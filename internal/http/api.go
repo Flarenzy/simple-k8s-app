@@ -73,6 +73,7 @@ func (a *API) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/import/csv", a.handleImportCSV)
 	mux.HandleFunc("POST /api/v1/subnets/{id}/ips", a.handleCreateIPBySubnetID)
 	mux.HandleFunc("GET /api/v1/subnets/{id}/ips", a.handleGetIPsBySubnetID)
+	mux.HandleFunc("GET /api/v1/subnets/{id}/kubernetes-services", a.handleGetKubernetesServicesBySubnetID)
 	mux.HandleFunc("GET /api/v1/kubernetes/sources", a.handleGetKubernetesSources)
 	mux.HandleFunc("PATCH /api/v1/subnets/{id}/ips/{uuid}", a.handleUpdateIPByUUID)
 	mux.HandleFunc("DELETE /api/v1/subnets/{id}/ips/{uuid}", a.handleDeleteIPByUUIDandSubnetID)

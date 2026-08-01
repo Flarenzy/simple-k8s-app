@@ -66,21 +66,22 @@ type KubernetesServicePort struct {
 }
 
 type KubernetesSource struct {
-	ID             pgtype.UUID        `json:"id"`
-	SourceKey      string             `json:"source_key"`
-	Name           string             `json:"name"`
-	SiteID         pgtype.UUID        `json:"site_id"`
-	ClusterDomain  string             `json:"cluster_domain"`
-	NamespaceScope []string           `json:"namespace_scope"`
-	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
-	LastSuccessAt  pgtype.Timestamptz `json:"last_success_at"`
-	LastError      string             `json:"last_error"`
-	ServiceCount   int32              `json:"service_count"`
-	MatchedCount   int32              `json:"matched_count"`
-	UnmatchedCount int32              `json:"unmatched_count"`
-	AmbiguousCount int32              `json:"ambiguous_count"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	SourceKey       string             `json:"source_key"`
+	Name            string             `json:"name"`
+	SiteID          pgtype.UUID        `json:"site_id"`
+	ClusterDomain   string             `json:"cluster_domain"`
+	NamespaceScope  []string           `json:"namespace_scope"`
+	LastAttemptAt   pgtype.Timestamptz `json:"last_attempt_at"`
+	LastSuccessAt   pgtype.Timestamptz `json:"last_success_at"`
+	LastError       string             `json:"last_error"`
+	ServiceCount    int32              `json:"service_count"`
+	MatchedCount    int32              `json:"matched_count"`
+	UnmatchedCount  int32              `json:"unmatched_count"`
+	AmbiguousCount  int32              `json:"ambiguous_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	NoUsableIpCount int32              `json:"no_usable_ip_count"`
 }
 
 type Site struct {

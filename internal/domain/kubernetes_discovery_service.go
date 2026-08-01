@@ -39,3 +39,11 @@ func (s *kubernetesDiscoveryService) ListSourceStatuses(ctx context.Context) ([]
 	}
 	return statuses, err
 }
+
+func (s *kubernetesDiscoveryService) ListServicesBySubnetID(ctx context.Context, subnetID int64) ([]KubernetesServiceObservation, error) {
+	services, err := s.repository.ListAllServicesBySubnetID(ctx, subnetID)
+	if services == nil {
+		services = make([]KubernetesServiceObservation, 0)
+	}
+	return services, err
+}
