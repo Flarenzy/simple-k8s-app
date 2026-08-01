@@ -64,6 +64,12 @@ export type KubernetesServiceObservation = Omit<KubernetesService, "matched_addr
 	hostnames?: { kind: string; hostname: string }[];
 };
 
+export type KubernetesServiceSummary = {
+	count: number;
+	statuses: Partial<Record<KubernetesServiceStatus, number>>;
+	state?: "loading" | "ready" | "unavailable";
+};
+
 export type Site = {
 	id: string;
 	name: string;
