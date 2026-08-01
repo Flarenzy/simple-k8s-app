@@ -24,6 +24,9 @@ func NewKeycloakAuthenticator(ctx context.Context, cfg Config) (Authenticator, e
 	if cfg.Issuer == "" {
 		return nil, fmt.Errorf("auth enabled but issuer is empty")
 	}
+	if cfg.Audience == "" {
+		return nil, fmt.Errorf("auth enabled but audience is empty")
+	}
 
 	jwksURL := cfg.JWKSURL
 	if jwksURL == "" {
@@ -92,7 +95,9 @@ func (a *keycloakAuthenticator) Authenticate(_ context.Context, bearerToken stri
 	return Principal{
 		Issuer:   stringClaim(claims, "iss"),
 		Subject:  stringClaim(claims, "sub"),
+		Username: stringClaim(claims, "preferred_username"),
 		Audience: claims["aud"],
+		Roles:    clientRoles(claims, a.audience),
 		Claims:   claims,
 	}, nil
 }
@@ -103,4 +108,32 @@ func stringClaim(claims jwt.MapClaims, key string) string {
 		return ""
 	}
 	return value
+}
+
+func clientRoles(claims jwt.MapClaims, clientID string) []Role {
+	resourceAccess, ok := claims["resource_access"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	clientAccess, ok := resourceAccess[clientID].(map[string]any)
+	if !ok {
+		return nil
+	}
+	values, ok := clientAccess["roles"].([]any)
+	if !ok {
+		return nil
+	}
+
+	roles := make([]Role, 0, len(values))
+	for _, value := range values {
+		name, ok := value.(string)
+		if !ok {
+			continue
+		}
+		switch Role(name) {
+		case RoleAdmin, RoleReadOnly, RoleEditor:
+			roles = append(roles, Role(name))
+		}
+	}
+	return roles
 }

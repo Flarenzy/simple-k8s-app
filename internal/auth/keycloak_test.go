@@ -79,7 +79,12 @@ func TestKeycloakAuthenticatorReturnsPrincipal(t *testing.T) {
 		jwks:     staticKeyfunc{secret: []byte("test-secret")},
 	}
 
-	token := signToken(t, makeClaims("http://keycloak.local/realms/ipam", []string{"ipam-api"}), []byte("test-secret"))
+	claims := makeClaims("http://keycloak.local/realms/ipam", []string{"ipam-api"})
+	claims["preferred_username"] = "admin"
+	claims["resource_access"] = map[string]any{
+		"ipam-api": map[string]any{"roles": []any{"admin", "unknown"}},
+	}
+	token := signToken(t, claims, []byte("test-secret"))
 	principal, err := authenticator.Authenticate(context.Background(), token)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -89,6 +94,36 @@ func TestKeycloakAuthenticatorReturnsPrincipal(t *testing.T) {
 	}
 	if principal.Subject != "user-1" {
 		t.Fatalf("unexpected subject: %v", principal.Subject)
+	}
+	if principal.Username != "admin" {
+		t.Fatalf("unexpected username: %v", principal.Username)
+	}
+	if len(principal.Roles) != 1 || principal.Roles[0] != RoleAdmin {
+		t.Fatalf("unexpected application roles: %v", principal.Roles)
+	}
+}
+
+func TestClientRolesIgnoresOtherClientsAndUnknownRoles(t *testing.T) {
+	claims := jwt.MapClaims{
+		"resource_access": map[string]any{
+			"ipam-api": map[string]any{"roles": []any{"read-only", "editor", "offline_access"}},
+			"other":    map[string]any{"roles": []any{"admin"}},
+		},
+	}
+
+	roles := clientRoles(claims, "ipam-api")
+	if len(roles) != 2 || roles[0] != RoleReadOnly || roles[1] != RoleEditor {
+		t.Fatalf("unexpected roles: %v", roles)
+	}
+}
+
+func TestNewKeycloakAuthenticatorFailsWithoutAudience(t *testing.T) {
+	_, err := NewKeycloakAuthenticator(context.Background(), Config{
+		Enabled: true,
+		Issuer:  "http://keycloak.local/realms/ipam",
+	})
+	if err == nil || !strings.Contains(err.Error(), "audience is empty") {
+		t.Fatalf("expected missing audience error, got %v", err)
 	}
 }
 

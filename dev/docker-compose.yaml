@@ -25,8 +25,9 @@ services:
     container_name: "ipam-keycloak"
     command: start-dev --http-port=8080 --import-realm
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_BOOTSTRAP_USERNAME:-keycloak-bootstrap}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_PASSWORD:?set KEYCLOAK_BOOTSTRAP_PASSWORD}
+      IPAM_ADMIN_PASSWORD: ${IPAM_ADMIN_PASSWORD:?set IPAM_ADMIN_PASSWORD}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://db:5432/ipam
       KC_DB_USERNAME: ipam

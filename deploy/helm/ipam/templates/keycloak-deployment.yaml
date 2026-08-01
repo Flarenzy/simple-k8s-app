@@ -45,9 +45,26 @@ spec:
           {{- end }}
           env:
             - name: KEYCLOAK_ADMIN
+              {{- if .Values.keycloak.admin.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.admin.existingSecret }}
+                  key: {{ .Values.keycloak.admin.usernameKey }}
+              {{- else }}
               value: {{ .Values.keycloak.admin.username | quote }}
+              {{- end }}
             - name: KEYCLOAK_ADMIN_PASSWORD
-              value: {{ .Values.keycloak.admin.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "keycloak.admin.existingSecret is required when Keycloak is enabled" .Values.keycloak.admin.existingSecret }}
+                  key: {{ .Values.keycloak.admin.passwordKey }}
+            {{- if .Values.keycloak.realmImport.enabled }}
+            - name: IPAM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "keycloak.applicationAdmin.existingSecret is required when realm import is enabled" .Values.keycloak.applicationAdmin.existingSecret }}
+                  key: {{ .Values.keycloak.applicationAdmin.passwordKey }}
+            {{- end }}
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL

@@ -67,6 +67,8 @@ fe:
     VITE_KEYCLOAK_URL: ""
     VITE_KEYCLOAK_REALM: ""
     VITE_KEYCLOAK_CLIENT_ID: ""
+    # Client whose roles authorize API access. This is normally the API audience.
+    VITE_KEYCLOAK_ROLE_CLIENT_ID: "ipam-api"
     VITE_API_BASE: ""
 migrations:
   enabled: true
@@ -138,16 +140,23 @@ keycloak:
   enabled: false
   replicaCount: 1
   image:
-    repository: keycloak/keycloak
-    tag: "24.0.0"
+    repository: quay.io/keycloak/keycloak
+    tag: "24.0.5"
     pullPolicy: IfNotPresent
   args: []
   service:
     type: ClusterIP
     port: 8080
   admin:
-    username: admin
-    password: changeme
+    # Keycloak master-realm bootstrap account. This is not the IPAM application admin.
+    username: keycloak-bootstrap
+    existingSecret: ""
+    usernameKey: username
+    passwordKey: password
+  applicationAdmin:
+    # Password for the IPAM realm user named admin, resolved by the realm import.
+    existingSecret: ""
+    passwordKey: password
   db:
     host: ipam-postgres-postgresql
     port: 5432
@@ -229,6 +238,10 @@ httpRoute:
   api:
     hostnames:
       - api.simplek8sapp.lan
+    path: /
+  keycloak:
+    hostnames:
+      - keycloak.simplek8sapp.lan
     path: /
   #   filters:
   #   - type: RequestHeaderModifier

@@ -30,6 +30,15 @@
       ]
     }
   ],
+  "roles": {
+    "client": {
+      "ipam-api": [
+        { "name": "admin" },
+        { "name": "read-only" },
+        { "name": "editor" }
+      ]
+    }
+  },
   "users": [
     {
       "username": "integration-user",
@@ -45,7 +54,48 @@
           "value": "integration-password",
           "temporary": false
         }
-      ]
+      ],
+      "clientRoles": {
+        "ipam-api": ["admin"]
+      }
+    },
+    {
+      "username": "integration-reader",
+      "enabled": true,
+      "firstName": "Integration",
+      "lastName": "Reader",
+      "email": "integration-reader@example.com",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "integration-password",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "ipam-api": ["read-only"]
+      }
+    },
+    {
+      "username": "integration-editor",
+      "enabled": true,
+      "firstName": "Integration",
+      "lastName": "Editor",
+      "email": "integration-editor@example.com",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "integration-password",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "ipam-api": ["editor"]
+      }
     }
   ]
 }

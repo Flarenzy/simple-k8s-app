@@ -361,6 +361,7 @@ button, select { font: inherit; }
 .user-menu__trigger { border: 0; background: transparent; display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
 .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; }
 .user-menu__content { position: absolute; right: 0; top: 42px; width: 180px; padding: 6px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; box-shadow: 0 12px 28px #1720331c; }
+.user-menu__role { display: block; padding: 8px 10px; color: #64748b; font-size: 12px; }
 .user-menu__content button { width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 10px; cursor: pointer; }
 .user-menu__content button:hover { background: #f1f5f9; }
 .user-fallback { margin-left: auto; color: #718096; font-size: 13px; }

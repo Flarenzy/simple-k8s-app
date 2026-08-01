@@ -4,6 +4,7 @@ import { getEnv } from "./env";
 const url = getEnv("VITE_KEYCLOAK_URL");
 const realm = getEnv("VITE_KEYCLOAK_REALM");
 const clientId = getEnv("VITE_KEYCLOAK_CLIENT_ID");
+export const roleClientId = getEnv("VITE_KEYCLOAK_ROLE_CLIENT_ID", "ipam-api");
 
 export const keycloakEnabled = Boolean(url && realm && clientId);
 
