@@ -272,6 +272,9 @@ Validation commands:
 ```bash
 make test
 make test-integration
+npm --prefix frontend run build
+make sqlc
+make docs
 helm lint deploy/helm/ipam
 helm template ipam deploy/helm/ipam
 ```
